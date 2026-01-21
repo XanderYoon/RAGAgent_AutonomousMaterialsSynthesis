@@ -14,4 +14,6 @@ venv*
 *.db
 __pycache__/
 temp*
-
+.streamlit/
+.DS_Store
+.log
