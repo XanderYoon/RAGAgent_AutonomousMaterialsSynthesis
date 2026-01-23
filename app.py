@@ -1,3 +1,42 @@
+from config import (
+    EMBEDDING_DIMENSIONS,
+    TOKENS_PER_CHUNK,
+    WORDS_PER_CHUNK_OVERLAP,
+    TOP_K_TEXT_FAISS,
+    TOP_K_TEXT_BM25,
+    TOP_K_UPLOAD_FAISS,
+    TOP_K_GRAPH,
+    STREAM_DELAY,
+)
+
+from ingestion.cleaners import (
+    remove_junk_sections,
+    remove_junk_lines,
+)
+
+from ingestion.chunkers import (
+    chunk_text,
+    chunk_text2,
+)
+
+from ingestion.loaders import (
+    extract_text_from_pdf,
+    _parse_table_file,
+    _to_data_url,
+)
+
+from ingestion.faiss_store import (
+    build_faiss_from_embeddings,
+    load_faiss_from_disk,
+)
+
+from ingestion.embeddings import estimate_embedding_cost
+
+from ingestion.graphrag import (
+    run_graphrag_cli,
+    StaticGraphRetriever,
+)
+
 from pathlib import Path
 import re
 import fitz
@@ -38,7 +77,6 @@ import json
 import subprocess
 import yaml
 
-set_llm_cache(SQLiteCache(database_path=".cache.db"))
 
 ################################
 # Helpers 
@@ -52,141 +90,6 @@ def dequote_path(p: str) -> str:
         p = p[1:-1]
     return p
 
-def extract_text_from_pdf(path):
-    doc = fitz.open(path)
-    return "\n".join(page.get_text() for page in doc)
-
-def remove_junk_sections(text, section_markers=None):
-    if section_markers is None:
-        section_markers = [
-            "references",
-            "acknowledgment", "acknowledgement", "acknowledgments", "acknowledgements",
-            "author information", "author contribution", "author contributions",
-            "associated content",
-        ]
-    pattern = re.compile(rf"^\s*[\.\-\u25A0\u2022]*\s*({'|'.join(section_markers)})", re.IGNORECASE | re.MULTILINE)
-    match = pattern.search(text)
-    return text[:match.start()] if match else text
-
-def remove_junk_lines(text, junk_patterns=None):
-    if junk_patterns is None:
-        junk_patterns = [
-            "doi:", "et al.", "https://", "http://", ".org", ".com", "conflict of interest", "bio:", "funding",
-            "journal", "citation", "cc-by", "preprint", "arxiv",
-            "license", "open access",
-            "submitted to", "peer review", "double-blind", "published",
-            "copyright", "all rights reserved",
-            ## "figure", "table",
-            "correspondence should be addressed to",
-            "authors contributed equally",
-            "this manuscript has been authored by",
-            "contract no",
-            "supporting information",
-            "read online",
-            "received:",
-            "revised:",
-            "accepted:",
-            "cite this:",
-            "©",
-            "download",
-            "public access plan",
-            "department of",
-            "university",
-            "national laboratory",
-            "laboratory",
-            "government",
-        ]
-    countries = [country.name.lower() for country in pycountry.countries]
-    lines = text.splitlines()
-    cleaned = []
-    for line in lines:
-        lower = line.lower()
-        if any(pat in lower for pat in junk_patterns):
-            continue
-        if "*" in line or "†" in line or "∇" in line:
-            continue
-        if any(re.search(rf"\b{re.escape(c)}\b", lower) for c in countries):
-            continue
-        cleaned.append(line)
-    return "\n".join(cleaned)
-
-def chunk_text(text, max_tokens=None, tokenizer=None):
-    if max_tokens is None:
-        max_tokens = TOKENS_PER_CHUNK
-    if tokenizer is None:
-        tokenizer = enc
-    words = text.split()
-    chunks = []
-    current = []
-    for word in words:
-        current.append(word)
-        test_chunk = " ".join(current)
-        if len(tokenizer.encode(test_chunk)) > max_tokens:
-            current.pop()
-            chunks.append(" ".join(current))
-            current = [word]
-    if current:
-        chunks.append(" ".join(current))
-    return chunks
-
-def chunk_text2(text, max_tokens=None, tokenizer=None, overlap=None):
-    # Sliding-window with word overlap to keep coherence
-    if max_tokens is None:
-        max_tokens = TOKENS_PER_CHUNK
-    if tokenizer is None:
-        tokenizer = enc
-    if overlap is None:
-        overlap = WORDS_PER_CHUNK_OVERLAP
-    words = text.split()
-    chunks = []
-    current = []
-    i = 0
-    while i < len(words):
-        word = words[i]
-        current.append(word)
-        test_chunk = " ".join(current)
-        if len(tokenizer.encode(test_chunk)) > max_tokens:
-            current.pop()
-            chunks.append(" ".join(current))
-            overlap_start = max(len(current) - overlap, 0)
-            current = current[overlap_start:] + [word]
-        i += 1
-    if current:
-        chunks.append(" ".join(current))
-    return chunks
-
-def estimate_embedding_cost(token_count, model="text-embedding-3-small"):
-    price_per_million = {
-        "text-embedding-3-small": 0.02,
-        "text-embedding-3-large": 0.13,
-        "text-embedding-ada-002": 0.10,
-    }.get(model, 0.02)  # price per 1,000,000 tokens
-    return (token_count / 1_000_000) * price_per_million
-
-def _to_data_url(file_bytes, mime_type="image/png"):
-    # Convert bytes -> data URL for multimodal image input
-    b64 = base64.b64encode(file_bytes).decode("utf-8")
-    return f"data:{mime_type};base64,{b64}"
-
-def _parse_table_file(file_bytes, filename, max_rows=50, max_chars=20000):
-    # Compact text extraction for tabular files
-    try:
-        if filename.lower().endswith(".csv"):
-            df = pd.read_csv(io.BytesIO(file_bytes))
-        else:  # .xlsx
-            df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
-    except Exception as e:
-        return f"[PARSE-ERROR {filename}: {e}]"
-    buf = []
-    buf.append(f"TABLE: {filename}")
-    buf.append("COLUMNS: " + ", ".join(map(str, df.columns.tolist())))
-    head = df.head(max_rows)
-    buf.append("HEAD:")
-    buf.append(head.to_csv(index=False))
-    text = "\n".join(buf)
-    if len(text) > max_chars:
-        text = text[:max_chars] + "\n...[truncated]..."
-    return text
 
 def build_upload_bundle(uploaded_files, client, embedding_model, dimension):
     """
@@ -279,47 +182,12 @@ def build_upload_bundle(uploaded_files, client, embedding_model, dimension):
         )
 
     return upload_db, text_meta, images
-
-def run_graphrag_cli(root_dir: str, input_dir: str, output_dir: str, api_key: str):
-    settings_path = Path(root_dir) / "settings.yaml"
-    env_path = Path(root_dir) / ".env"
-    
-    with open(env_path, "w") as f:
-        f.write(f"GRAPHRAG_API_KEY={api_key}\n")
-    
-    if not settings_path.exists():
-        subprocess.run(["graphrag", "init", "--root", str(root_dir)], check=True)
-    
-    result = subprocess.run(
-        ["graphrag", "index", "--root", str(root_dir)],
-        capture_output=True,
-        text=True
-    )
-    return result.returncode == 0
-
-class StaticGraphRetriever(BaseRetriever):
-    def _get_relevant_documents(self, query, *, run_manager=None):
-        return graph_docs
-    async def _aget_relevant_documents(self, query, *, run_manager=None):
-        return graph_docs                
     
 ################################
 # Globals / Config
 ################################
 
 enc = tiktoken.get_encoding("cl100k_base")
-
-d_em2dim = {
-    "text-embedding-3-small": 1536,
-    "text-embedding-3-large": 3072
-}
-TOKENS_PER_CHUNK = 300
-WORDS_PER_CHUNK_OVERLAP = int(TOKENS_PER_CHUNK / 5)  # ~20%
-top_k_textKBfaiss = 50
-top_k_textKBbm = 50
-top_k_addKBfaiss = 25
-top_k_textKBgraph = 25
-stream_delay = 0.08
 
 ################################
 # App UI
@@ -372,7 +240,7 @@ if option == "📚 Build a new Knowledge-Base":
         index=0,
         help="This model is used for generating embeddings → impacts context matching"
     )
-    st.session_state.dimension = d_em2dim[st.session_state.embedding_model]
+    st.session_state.dimension = EMBEDDING_DIMENSIONS[st.session_state.embedding_model]
     st.session_state.pdf_folder = dequote_path(st.text_input(
         "📁 Input Folder path for PDFs:",
         value='inputs',
@@ -456,48 +324,29 @@ if option == "📚 Build a new Knowledge-Base":
                 chunk_count += 1
                 progress = int((chunk_count / total_chunks) * 100)
                 progress_bar.progress(progress)
-        #
-        embedding_matrix = np.array(all_embeddings, dtype="float32")
-        st.session_state.dimension = d_em2dim[st.session_state.embedding_model]
-        index = faiss.IndexFlatL2(st.session_state.dimension)
-        index.add(embedding_matrix)
+                
+        index, db, all_documents = build_faiss_from_embeddings(
+            embeddings=all_embeddings,
+            metadata=all_metadata,
+            embedding_function=embeddings_obj,
+            dimension=st.session_state.dimension,
+        )
+
         os.makedirs(os.path.dirname(st.session_state.knowledge_base_name), exist_ok=True)
         os.makedirs(os.path.dirname(st.session_state.metadata_name), exist_ok=True)
+
         faiss.write_index(index, st.session_state.knowledge_base_name)
         with open(st.session_state.metadata_name, "wb") as f:
             pickle.dump(all_metadata, f)
+
         st.success("✅ Knowledge-Base built and saved!")
+
         st.session_state.index = index
         st.session_state.metadata = all_metadata
-        ## index, metadata -
-        ## db
-        metadata = all_metadata
-        ids = [str(i) for i in range(len(metadata))]
-        docs_dict = {
-            ids[i]: Document(
-                page_content=meta["text"],
-                metadata={
-                    "source": meta["source"], 
-                    "chunk_id": meta["chunk_id"],
-                    "original_content": meta["text"],                     
-                }
-            )
-            for i, meta in enumerate(metadata)
-        }
-        docstore = InMemoryDocstore(docs_dict)
-        index_to_docstore_id = {i: ids[i] for i in range(len(ids))}
-        db = FAISS(
-            embedding_function=embeddings_obj,
-            index=index,
-            docstore=docstore,
-            index_to_docstore_id=index_to_docstore_id,
-        )
         st.session_state.db = db
-        ## db -
-        ## bm
-        all_documents = list(docstore._dict.values())  
         st.session_state.all_documents = all_documents
-        st.session_state.bm25 = BM25Retriever.from_documents(all_documents, k=top_k_textKBbm)
+
+        st.session_state.bm25 = BM25Retriever.from_documents(all_documents, k=TOP_K_TEXT_BM25)
         ## bm -
         ## graphRAG
         try:
@@ -543,37 +392,25 @@ elif option == "📤 Load existing Knowledge-Base":
             with open(meta_path, "rb") as f:
                 metadata = pickle.load(f)                
 
-            ids = [str(i) for i in range(len(metadata))]
-            docs_dict = {
-                ids[i]: Document(
-                    page_content=meta["text"],
-                    metadata={
-                        "source": meta["source"], 
-                        "chunk_id": meta["chunk_id"],
-                        "original_content": meta["text"],                    
-                    }
-                )
-                for i, meta in enumerate(metadata)
-            }
-            docstore = InMemoryDocstore(docs_dict)
-            index_to_docstore_id = {i: ids[i] for i in range(len(ids))}
-            db = FAISS(
-                embedding_function=embeddings_obj,
+            db, all_documents = load_faiss_from_disk(
                 index=index,
-                docstore=docstore,
-                index_to_docstore_id=index_to_docstore_id,
+                metadata=metadata,
+                embedding_function=embeddings_obj,
             )
+
+            st.session_state.db = db
+            st.session_state.all_documents = all_documents
+
+
             st.session_state.embedding_model = metadata[0].get("embedding_model", "text-embedding-3-small")
-            st.session_state.dimension = d_em2dim[st.session_state.embedding_model]
+            st.session_state.dimension = EMBEDDING_DIMENSIONS[st.session_state.embedding_model]
             st.session_state.index = index
             st.session_state.metadata = metadata            
             st.success(f"✅ Knowledge-Base loaded successfully! Embedding model: `{st.session_state.embedding_model}`")                                    
             st.session_state.db = db
             ## index, metadata, db -
             # === loading for bm, graph ===
-            all_documents = list(docstore._dict.values())
-            st.session_state.all_documents = all_documents
-            st.session_state.bm25 = BM25Retriever.from_documents(all_documents, k=top_k_textKBbm)            
+            st.session_state.bm25 = BM25Retriever.from_documents(all_documents, k=TOP_K_TEXT_BM25)            
             #
             required_files = ["entities.parquet", "relationships.parquet", "documents.parquet", "communities.parquet", "community_reports.parquet",]
             missing = [f for f in required_files if not os.path.exists(Path(graphrag) / "output" / f)]
@@ -631,7 +468,7 @@ elif option == "➕ Append existing Knowledge-Base":
         # 2a) Verify embedding model compatibility
         existing_model = metadata_existing[0].get("embedding_model", st.session_state.embedding_model)
         st.session_state.embedding_model = existing_model
-        st.session_state.dimension = d_em2dim[st.session_state.embedding_model]
+        st.session_state.dimension = EMBEDDING_DIMENSIONS[st.session_state.embedding_model]
         #
         # 3) Extract / clean / chunk new PDFs
         st.write("🔍 Processing NEW PDFs to append...")
@@ -686,7 +523,7 @@ elif option == "➕ Append existing Knowledge-Base":
         new_mat = np.array(new_embeddings, dtype="float32")
         try:
             # Ensure dimension matches
-            if new_mat.shape[1] != d_em2dim[st.session_state.embedding_model]:
+            if new_mat.shape[1] != EMBEDDING_DIMENSIONS[st.session_state.embedding_model]:
                 st.error("Embedding dimension mismatch. Aborting."); st.stop()
             index.add(new_mat)
         except Exception as e:
@@ -702,32 +539,18 @@ elif option == "➕ Append existing Knowledge-Base":
         #
         # 6) Rebuild LangChain FAISS wrapper + BM25 over all docs (existing + new)
         try:
-            ids = [str(i) for i in range(len(updated_metadata))]
-            docs_dict = {
-                ids[i]: Document(
-                    page_content=meta["text"],
-                    metadata={
-                        "source": meta["source"],
-                        "chunk_id": meta["chunk_id"],
-                        "original_content": meta.get("original_content", meta["text"]),
-                    }
-                )
-                for i, meta in enumerate(updated_metadata)
-            }
-            docstore = InMemoryDocstore(docs_dict)
-            index_to_docstore_id = {i: ids[i] for i in range(len(ids))}
-            db = FAISS(
-                embedding_function=embeddings_obj,
+            db, all_documents = load_faiss_from_disk(
                 index=index,
-                docstore=docstore,
-                index_to_docstore_id=index_to_docstore_id,
+                metadata=updated_metadata,
+                embedding_function=embeddings_obj,
             )
+
             st.session_state.index = index
-            st.session_state.metadata = updated_metadata            
+            st.session_state.metadata = updated_metadata
             st.session_state.db = db
-            all_documents = list(docstore._dict.values())
             st.session_state.all_documents = all_documents
-            st.session_state.bm25 = BM25Retriever.from_documents(all_documents, k=top_k_textKBbm)
+            st.session_state.bm25 = BM25Retriever.from_documents(all_documents, k=TOP_K_TEXT_BM25)
+
         except Exception as e:
             st.warning(f"KB wrapper rebuild warning: {e}")
             
@@ -827,7 +650,7 @@ if "index" in st.session_state:
                         uploaded_files=uploaded_files,
                         client=client,
                         embedding_model=st.session_state.embedding_model,
-                        dimension=d_em2dim[st.session_state.embedding_model]
+                        dimension=EMBEDDING_DIMENSIONS[st.session_state.embedding_model]
                     )
                     st.session_state.upload_db = up_db
                     st.session_state.upload_meta = up_meta
@@ -857,13 +680,13 @@ if "index" in st.session_state:
             ##
             ##
             # results = st.session_state.db.max_marginal_relevance_search_by_vector(
-            #     embedding=flat_emb, k=top_k_textKBfaiss, fetch_k=top_k_textKBfaiss * 2, lambda_mult=1.0 - diversity
+            #     embedding=flat_emb, k=TOP_K_TEXT_FAISS, fetch_k=TOP_K_TEXT_FAISS * 2, lambda_mult=1.0 - diversity
             # )
             vs_retriever = st.session_state.db.as_retriever(
                 search_type="mmr",
                 search_kwargs={
-                    "k": top_k_textKBfaiss,
-                    "fetch_k": top_k_textKBfaiss * 2,
+                    "k": TOP_K_TEXT_FAISS,
+                    "fetch_k": TOP_K_TEXT_FAISS * 2,
                     "lambda_mult": 1.0 - diversity,
                 },
             )
@@ -876,7 +699,7 @@ if "index" in st.session_state:
                 include_original=True,
             ) 
             # cross_encoder = HuggingFaceCrossEncoder(model_name="cross-encoder/ms-marco-MiniLM-L-6-v2")
-            # reranker = CrossEncoderReranker(model=cross_encoder, top_n=int(top_k_textKBfaiss+top_k_textKBbm))        
+            # reranker = CrossEncoderReranker(model=cross_encoder, top_n=int(TOP_K_TEXT_FAISS+TOP_K_TEXT_BM25))        
             # reranked_exapanded = ContextualCompressionRetriever(
             #     base_retriever=multi_query,
             #     base_compressor=reranker,
@@ -901,14 +724,14 @@ if "index" in st.session_state:
             if use_uploads and st.session_state.get("upload_db") is not None:
                 ##
                 # results_up = st.session_state.upload_db.max_marginal_relevance_search_by_vector(
-                #     embedding=flat_emb, k=top_k_addKBfaiss, fetch_k=top_k_addKBfaiss * 2, lambda_mult=1.0 - diversity
+                #     embedding=flat_emb, k=TOP_K_UPLOAD_FAISS, fetch_k=TOP_K_UPLOAD_FAISS * 2, lambda_mult=1.0 - diversity
                 # )
                 #
                 vs_retriever_up = st.session_state.upload_db.as_retriever(
                     search_type="mmr",
                     search_kwargs={
-                        "k": top_k_addKBfaiss,
-                        "fetch_k": top_k_addKBfaiss * 2,
+                        "k": TOP_K_UPLOAD_FAISS,
+                        "fetch_k": TOP_K_UPLOAD_FAISS * 2,
                         "lambda_mult": 1.0 - diversity,
                     },
                 )
@@ -1035,7 +858,7 @@ Answer:
                         if event.type == "response.output_text.delta":
                             answer_text += event.delta
                             placeholder.markdown(answer_text + "▌")
-                            time.sleep(stream_delay)  
+                            time.sleep(STREAM_DELAY)  
                         elif event.type == "response.error":
                             st.error(str(event.error))
                         elif event.type in {"response.output_text.done", "response.completed"}:
@@ -1054,7 +877,7 @@ Answer:
                         if event.type == "content.delta":
                             answer_text += event.delta
                             placeholder.markdown(answer_text + "▌")
-                            time.sleep(stream_delay)
+                            time.sleep(STREAM_DELAY)
                         elif event.type == "content.done":
                             placeholder.markdown(answer_text)
             
@@ -1069,7 +892,7 @@ Answer:
                             if event.type == "response.output_text.delta":
                                 answer_text += event.delta
                                 placeholder.markdown(answer_text + "▌")
-                                time.sleep(stream_delay)
+                                time.sleep(STREAM_DELAY)
                             elif event.type == "response.error":
                                 st.error(str(event.error))
                             elif event.type in {"response.output_text.done", "response.completed"}:
@@ -1091,7 +914,7 @@ Answer:
                         if event.type == "content.delta":
                             answer_text += event.delta
                             placeholder.markdown(answer_text + "▌")
-                            time.sleep(stream_delay)
+                            time.sleep(STREAM_DELAY)
                         elif event.type == "content.done":
                             placeholder.markdown(answer_text)
 ## 
