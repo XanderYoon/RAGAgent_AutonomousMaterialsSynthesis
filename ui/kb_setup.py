@@ -1,9 +1,18 @@
+import os
+from pathlib import Path
 import streamlit as st
 from RAG.retrieval.kb_builder import KnowledgeBaseBuilder
 
 # -------------------------
 # Knowledge-Base Setup UI
 # -------------------------
+
+def _dequote_path(path):
+    """Strip accidental shell quotes."""
+    if path is None:
+        return path
+    return path.strip().strip('"').strip("'")
+
 
 def kb_setup(client, embeddings):
     st.header("📂 Knowledge-Base Setup")
@@ -22,24 +31,131 @@ def kb_setup(client, embeddings):
         model = st.selectbox(
             "Embedding model",
             ["text-embedding-3-small", "text-embedding-3-large"],
+            help="This model is used for generating embeddings → impacts context matching"
         )
-        pdf_dir = st.text_input("PDF folder", "inputs", disabled = not has_valid_key)
-        index_path = st.text_input("Index path", "outputs/index.index", disabled = not has_valid_key)
-        meta_path = st.text_input("Metadata path", "outputs/meta.pkl", disabled = not has_valid_key)
-        graphrag_dir = st.text_input("GraphRAG dir", "outputs/graphrag", disabled = not has_valid_key)
+        pdf_dir = _dequote_path(
+            st.text_input(
+                "📁 Input Folder path for PDFs",
+                value="inputs", 
+                help="Path to get the PDFs as input to build the Knowledge-Base",
+                disabled = not has_valid_key
+            )
+        )
+        index_path = _dequote_path(
+            st.text_input(
+                "🧠 Output FAISS index file path (.index)",
+                value='outputs/test_index.index',
+                help="Path to save the FAISS index",
+                disabled = not has_valid_key
+            )
+        )
+        meta_path = _dequote_path(
+            st.text_input(
+                "📝 Output metadata file path (.pkl)",
+                value='outputs/test_metadata.pkl',
+                help="Path to save metadata for chunks",
+                disabled = not has_valid_key
+            )
+        )
+        graphrag_dir = _dequote_path(
+            st.text_input(
+                "📁 Parent directory for Knowledge-Graph",
+                value='outputs',
+                help="This is where the Knowledge-Graph pipeline will create 'knowledge_graph' subfolder and save related artifacts",
+                disabled = not has_valid_key
+            )
+        )
 
         if st.button("Build",disabled = not has_valid_key):
+            if not os.path.isdir(pdf_dir):
+                st.error("The provided folder path does not exist!")
+                st.stop()
+            pdf_files = list(Path(pdf_dir).glob("*.pdf"))
+            if not pdf_files:
+                st.error("No PDF files found in the selected folder!")
+                st.stop()
+                
             kb.build(pdf_dir, index_path, meta_path, graphrag_dir, model)
             st.success("✅ Knowledge-Base built")
 
     elif mode == "📤 Load":
-        index_path = st.text_input("Index path", disabled = not has_valid_key)
-        meta_path = st.text_input("Metadata path", disabled = not has_valid_key)
-        graphrag_dir = st.text_input("GraphRAG dir", disabled = not has_valid_key)
-
+        index_path = _dequote_path(
+            st.text_input(
+                "🧠 Index file path (.index)",
+                value='outputs/test_index.index',
+                disabled = not has_valid_key
+            )
+        )        
+        meta_path = _dequote_path(
+            st.text_input(
+                "📝 Metadata file path (.pkl)",
+                value='outputs/test_metadata.pkl',
+                disabled = not has_valid_key
+            )
+        )
+        graphrag_dir = _dequote_path(
+            st.text_input(
+                "🕸️ Directory for Knowledge-Graph",
+                value='outputs/graphrag',
+                help="Folder where the Knowledge-Graph pipeline saved related artifacts",
+                disabled = not has_valid_key
+            )
+        )
         if st.button("Load", disabled = not has_valid_key):
+            if not os.path.isdir(graphrag_dir):
+                st.error("The provided folder path does not exist!")
+                st.stop()
+            
             kb.load(index_path, meta_path, graphrag_dir)
-            st.success("✅ Knowledge-Base loaded")
+
+            required = [
+                "entities.parquet",
+                "relationships.parquet",
+                "documents.parquet",
+                "communities.parquet",
+                "community_reports.parquet",
+            ]
+
+            missing = [
+                f for f in required
+                if not (Path(graphrag_dir) / "output" / f).exists()
+            ]
+
+            if missing:
+                st.warning(
+                    "⚠️ Knowledge-Graph directory is corrupted - missing critical files!"
+                )
+            else:
+                st.session_state.graphrag = graphrag_dir
+                st.success("✅ Knowledge-Graph loaded successfully!")
+
 
     else:
-        st.info("Append logic unchanged")
+        exist_index_path = st.text_input(
+            "🧠 Existing index file path (.index)",
+            value="outputs/index.index",
+            disabled=not has_valid_key,
+        )
+        exist_meta_path = st.text_input(
+            "📝 Existing metadata file path (.pkl)",
+            value="outputs/meta.pkl",
+            disabled=not has_valid_key,
+        )
+        graphrag_dir = st.text_input(
+            "🕸️ GraphRAG dir (existing workspace)",
+            value="outputs/graphrag",
+            disabled=not has_valid_key,
+            help="Must contain input/ and output/ from a prior build.",
+        )
+        append_folder = _dequote_path(
+            st.text_input(
+                "📁 Input Folder path for NEW PDFs to append:",
+                value="inputs/new",
+                help="Path to the NEW PDFs to be appended",
+                disabled=not has_valid_key,
+            )
+        )
+
+        if st.button("➕ Append to Knowledge-Base", disabled=not has_valid_key):
+            kb.append(exist_index_path, exist_meta_path, append_folder, graphrag_dir)
+            st.success("✅ Knowledge-Base appended")
