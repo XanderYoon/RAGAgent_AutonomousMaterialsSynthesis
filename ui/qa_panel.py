@@ -1,9 +1,6 @@
 import time
-import os
-import subprocess
 from pathlib import Path
 
-import numpy as np
 import streamlit as st
 from docx import Document as DocxDocument
 from langchain.retrievers import EnsembleRetriever, MultiQueryRetriever
@@ -14,17 +11,8 @@ from langchain_openai import ChatOpenAI
 
 from config import (
     TOP_K_TEXT_FAISS,
-    TOP_K_UPLOAD_FAISS,
-    STREAM_DELAY,
+    STREAM_DELAY
 )
-
-from ingestion.loaders import _to_data_url
-from ingestion.loaders import _parse_table_file
-from ingestion.loaders import extract_text_from_pdf
-from ingestion.cleaners import remove_junk_sections, remove_junk_lines
-from ingestion.chunkers import chunk_text2
-from ingestion.faiss_store import load_faiss_from_disk
-from ingestion.graphrag import run_graphrag_cli
 
 # ==============================
 # Model selection
@@ -76,12 +64,19 @@ def advanced_controls():
 def qa_panel(client):
     st.header("❓ Ask a Question")
 
-    model_selector()
-    advanced_controls()
+    has_valid_key = st.session_state.get("api_verified", False)
+    has_kb = "index" in st.session_state and st.session_state.index is not None
+    disable_all = (not has_valid_key) or (not has_kb)
 
-    if "index" not in st.session_state:
-        st.info("⚠️ Please build or load a Knowledge-Base before asking a question!")
-        return
+    if not has_valid_key:
+        st.info("ℹ️ Please set a valid API key and build or load a Knowledge-Base.")
+    elif not has_kb:
+        st.info("ℹ️ Please build or load a Knowledge-Base before asking a question.")
+    else:
+        if st.session_state.get("gpt_model") is None:
+            st.session_state.gpt_model = "gpt-4.1-2025-04-14"
+        model_selector()
+        advanced_controls()
 
     for key in ["last_query", "last_answer", "context_meta"]:
         if key not in st.session_state:
@@ -91,6 +86,7 @@ def qa_panel(client):
         "Ask your question here:",
         height=280,
         placeholder="Type your question...",
+        disabled=disable_all,
     )
 
     # ------------------------------
@@ -101,13 +97,22 @@ def qa_panel(client):
         "Upload PDFs/TXT/CSV/XLSX or images:",
         type=["pdf", "txt", "csv", "xlsx", "png", "jpg", "jpeg", "gif", "bmp", "tif", "tiff"],
         accept_multiple_files=True,
+        disabled=disable_all,
     )
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col1:
-        answer_clicked = st.button("💬 Answer", use_container_width=True)
+        answer_clicked = st.button(
+            "💬 Answer",
+            use_container_width=True,
+            disabled=disable_all,
+        )
     with col3:
-        save_clicked = st.button("💾 Save last Q&A", use_container_width=True)
+        save_clicked = st.button(
+            "💾 Save last Q&A",
+            use_container_width=True,
+            disabled=disable_all,
+        )
 
     # ------------------------------
     # ANSWER

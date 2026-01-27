@@ -1,5 +1,6 @@
 from langchain.globals import set_llm_cache
 from langchain_community.cache import SQLiteCache
+import tiktoken
 
 set_llm_cache(SQLiteCache(database_path=".cache.db"))
 
@@ -19,3 +20,6 @@ TOP_K_UPLOAD_FAISS = 25
 TOP_K_GRAPH = 25
 
 STREAM_DELAY = 0.08
+
+TOKENIZER_NAME = "cl100k_base"
+ENC = tiktoken.get_encoding(TOKENIZER_NAME)

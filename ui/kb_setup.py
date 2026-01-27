@@ -1,5 +1,4 @@
 # ui/kb_setup.py
-import os
 import pickle
 from pathlib import Path
 
@@ -27,6 +26,7 @@ from ingestion.graphrag import run_graphrag_cli
 
 def kb_setup(client, embeddings_obj):
     st.header("📂 Knowledge-Base Setup")
+    has_valid_key = st.session_state.get("api_verified", False)
 
     option = st.radio(
         "Choose how you want to set up the Knowledge-Base:",
@@ -42,30 +42,41 @@ def kb_setup(client, embeddings_obj):
     # BUILD KB
     # ==========================================================
     if option == "📚 Build a new Knowledge-Base":
+        if not has_valid_key:
+            st.info("ℹ️ Please set a valid API key to build a Knowledge-Base.")
+
         st.session_state.embedding_model = st.selectbox(
             "🔍 Select your embedding model:",
             options=["text-embedding-3-small", "text-embedding-3-large"],
             index=0,
+            disabled=not has_valid_key,
         )
         st.session_state.dimension = EMBEDDING_DIMENSIONS[
             st.session_state.embedding_model
         ]
 
-        pdf_folder = st.text_input("📁 Input Folder path for PDFs:", value="inputs")
+        pdf_folder = st.text_input(
+            "📁 Input Folder path for PDFs:",
+            value="inputs",
+            disabled=not has_valid_key,
+        )
         index_path = st.text_input(
             "🧠 Output FAISS index file path (.index)",
             value="outputs/test_index.index",
+            disabled=not has_valid_key,
         )
         meta_path = st.text_input(
             "📝 Output metadata file path (.pkl)",
             value="outputs/test_metadata.pkl",
+            disabled=not has_valid_key,
         )
         graphrag_dir = st.text_input(
             "📁 Directory for Knowledge-Graph",
             value="outputs/graphrag",
+            disabled=not has_valid_key,
         )
 
-        if st.button("📚 Build Knowledge-Base"):
+        if st.button("📚 Build Knowledge-Base", disabled=not has_valid_key):
             pdf_files = list(Path(pdf_folder).glob("*.pdf"))
             if not pdf_files:
                 st.error("No PDF files found!")
@@ -156,11 +167,27 @@ def kb_setup(client, embeddings_obj):
     # LOAD KB
     # ==========================================================
     elif option == "📤 Load existing Knowledge-Base":
-        index_path = st.text_input("🧠 Index file path (.index)")
-        meta_path = st.text_input("📝 Metadata file path (.pkl)")
-        graphrag_dir = st.text_input("📁 Knowledge-Graph directory")
+        if not has_valid_key:
+            st.info("ℹ️ Please set a valid API key to load a Knowledge-Base.")
 
-        if st.button("📤 Load Knowledge-Base"):
+        index_path = st.text_input(
+            "🧠 Index file path (.index)",
+            disabled=not has_valid_key,
+        )
+        meta_path = st.text_input(
+            "📝 Metadata file path (.pkl)",
+            disabled=not has_valid_key,
+        )
+        graphrag_dir = st.text_input(
+            "📁 Knowledge-Graph directory",
+            disabled=not has_valid_key,
+        )
+
+        if st.button("📤 Load Knowledge-Base", disabled=not has_valid_key):
+            if embeddings_obj is None:
+                st.error("Please set a valid API key to enable embeddings before loading.")
+                st.stop()
+
             index = faiss.read_index(index_path)
             with open(meta_path, "rb") as f:
                 metadata = pickle.load(f)
@@ -189,4 +216,7 @@ def kb_setup(client, embeddings_obj):
     # APPEND KB
     # ==========================================================
     else:
+        if not has_valid_key:
+            st.info("ℹ️ Please set a valid API key to append to a Knowledge-Base.")
+
         st.info("Append logic unchanged — moved verbatim in next step")
