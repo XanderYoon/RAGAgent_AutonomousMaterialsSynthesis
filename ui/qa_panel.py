@@ -9,165 +9,131 @@ from langchain.retrievers.document_compressors import LLMChainExtractor
 from langchain_community.document_transformers import LongContextReorder
 from langchain_openai import ChatOpenAI
 
-from config import (
-    TOP_K_TEXT_FAISS,
-    STREAM_DELAY
-)
+from config import TOP_K_TEXT_FAISS, STREAM_DELAY
 
-# ==============================
-# Model selection
-# ==============================
-def model_selector():
+
+# -------------------------
+# Controls
+# -------------------------
+
+DEFAULT_MODEL_OPTIONS = [
+    "gpt-4.1-2025-04-14",
+    "gpt-4o-2024-08-06",
+    "gpt-5",
+    "gpt-5-thinking",
+    "gpt-5-pro",
+    "o4-mini-2025-04-16",
+    "o4-mini-deep-research-2025-06-26",
+]
+
+
+def _is_allowed_model(model_id):
+    """Allow o* and non-codex GPT models."""
+    mid = (model_id or "").lower()
+    return mid.startswith("o") or (mid.startswith("gpt-") and "codex" not in mid)
+
+
+def _load_model_options(client):
+    """Fetch and cache available model IDs."""
+    cached = st.session_state.get("available_models")
+    if cached:
+        return cached
+
+    if client is None:
+        return DEFAULT_MODEL_OPTIONS
+
+    try:
+        data = client.models.list()
+        models = [m.id for m in getattr(data, "data", [])]
+        options = sorted({m for m in models if _is_allowed_model(m)})
+        if options:
+            st.session_state.available_models = options
+            return options
+    except Exception:
+        pass
+
+    return DEFAULT_MODEL_OPTIONS
+
+
+def model_selector(options):
+    """Select LLM for answer generation."""
+    current = st.session_state.get("gpt_model")
+    index = options.index(current) if current in options else 0
     st.session_state.gpt_model = st.selectbox(
         "🤖 Select model:",
-        options=[
-            "gpt-4.1-2025-04-14",
-            "gpt-4o-2024-08-06",
-            "gpt-5",
-            "gpt-5-thinking",
-            "gpt-5-pro",
-            "o4-mini-2025-04-16",
-            "o4-mini-deep-research-2025-06-26",
-        ],
-        index=0,
-        help="This model generates the final answer!",
+        options,
+        index=index,
     )
 
-# ==============================
-# Advanced controls
-# ==============================
+
 def advanced_controls():
-    with st.expander("🎛️ Advanced Controls: Diversity & Creativity"):
+    """Diversity + creativity controls."""
+    with st.expander("🎛️ Advanced Controls"):
         st.session_state.diversity = st.slider(
-            "🧭 Diversity Radar (0 = Homogeneous, 1 = Diverse)",
-            min_value=0.0,
-            max_value=1.0,
-            value=0.7,
-            step=0.01,
+            "Diversity", 0.0, 1.0, 0.7, 0.01
         )
 
-        if st.session_state.gpt_model in [
+        if st.session_state.gpt_model in {
             "gpt-4o-2024-08-06",
             "gpt-4.1-2025-04-14",
-        ]:
+        }:
             st.session_state.temperature = st.slider(
-                "🔥 Creativity Dial (0 = Boring, 1 = Creative)",
-                min_value=0.0,
-                max_value=1.0,
-                value=0.3,
-                step=0.01,
+                "Creativity", 0.0, 1.0, 0.3, 0.01
             )
         else:
             st.session_state.temperature = 0.3
 
 
-def qa_panel(client):
-    st.header("❓ Ask a Question")
+# -------------------------
+# Retrieval + Generation
+# -------------------------
 
-    has_valid_key = st.session_state.get("api_verified", False)
-    has_kb = "index" in st.session_state and st.session_state.index is not None
-    disable_all = (not has_valid_key) or (not has_kb)
+class QAEngine:
+    """Retrieve context and generate answers."""
 
-    if not has_valid_key:
-        st.info("ℹ️ Please set a valid API key and build or load a Knowledge-Base.")
-    elif not has_kb:
-        st.info("ℹ️ Please build or load a Knowledge-Base before asking a question.")
-    else:
-        if st.session_state.get("gpt_model") is None:
-            st.session_state.gpt_model = "gpt-4.1-2025-04-14"
-        model_selector()
-        advanced_controls()
+    def __init__(self, client):
+        self.client = client
 
-    for key in ["last_query", "last_answer", "context_meta"]:
-        if key not in st.session_state:
-            st.session_state[key] = ""
-
-    query = st.text_area(
-        "Ask your question here:",
-        height=280,
-        placeholder="Type your question...",
-        disabled=disable_all,
-    )
-
-    # ------------------------------
-    # Upload UI
-    # ------------------------------
-    st.markdown("#### 📎 Add any relevant file(s) for this question (optional)")
-    uploaded_files = st.file_uploader(
-        "Upload PDFs/TXT/CSV/XLSX or images:",
-        type=["pdf", "txt", "csv", "xlsx", "png", "jpg", "jpeg", "gif", "bmp", "tif", "tiff"],
-        accept_multiple_files=True,
-        disabled=disable_all,
-    )
-
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col1:
-        answer_clicked = st.button(
-            "💬 Answer",
-            use_container_width=True,
-            disabled=disable_all,
-        )
-    with col3:
-        save_clicked = st.button(
-            "💾 Save last Q&A",
-            use_container_width=True,
-            disabled=disable_all,
+    def retrieve(self, query: str):
+        vs = st.session_state.db.as_retriever(
+            search_type="mmr",
+            search_kwargs={
+                "k": TOP_K_TEXT_FAISS,
+                "fetch_k": TOP_K_TEXT_FAISS * 2,
+                "lambda_mult": 1.0 - st.session_state.diversity,
+            },
         )
 
-    # ------------------------------
-    # ANSWER
-    # ------------------------------
-    if answer_clicked and query:
-        with st.spinner("🔍 Retrieving context..."):
-            query_embedding = client.embeddings.create(
-                input=query,
-                model=st.session_state.embedding_model,
-            ).data[0].embedding
+        hybrid = EnsembleRetriever(
+            retrievers=[vs, st.session_state.bm25],
+            weights=[0.5, 0.5],
+        )
 
-            vs_retriever = st.session_state.db.as_retriever(
-                search_type="mmr",
-                search_kwargs={
-                    "k": TOP_K_TEXT_FAISS,
-                    "fetch_k": TOP_K_TEXT_FAISS * 2,
-                    "lambda_mult": 1.0 - st.session_state.diversity,
-                },
-            )
+        mq = MultiQueryRetriever.from_llm(
+            retriever=hybrid,
+            llm=ChatOpenAI(model="gpt-4o-mini"),
+            include_original=True,
+        )
 
-            hybrid = EnsembleRetriever(
-                retrievers=[vs_retriever, st.session_state.bm25],
-                weights=[0.5, 0.5],
-            )
+        compressor = LLMChainExtractor.from_llm(
+            ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        )
 
-            llm_expander = ChatOpenAI(model="gpt-4o-mini")
-            multi_query = MultiQueryRetriever.from_llm(
-                retriever=hybrid,
-                llm=llm_expander,
-                include_original=True,
-            )
+        retriever = ContextualCompressionRetriever(
+            base_retriever=mq,
+            base_compressor=compressor,
+        )
 
-            compressor = LLMChainExtractor.from_llm(
-                ChatOpenAI(model="gpt-4o-mini", temperature=0)
-            )
+        docs = retriever.invoke(query)
+        docs = LongContextReorder().transform_documents(docs)
 
-            retriever = ContextualCompressionRetriever(
-                base_retriever=multi_query,
-                base_compressor=compressor,
-            )
+        return "\n\n".join(
+            f"[{d.metadata['source']} | chunk {d.metadata['chunk_id']}]: {d.page_content}"
+            for d in docs
+        )
 
-            results = retriever.invoke(query)
-            results = LongContextReorder().transform_documents(results)
-
-            context_meta_chunks = [
-                f"[{d.metadata['source']} | chunk {d.metadata['chunk_id']}]: {d.page_content}"
-                for d in results
-            ]
-
-        context_meta = "\n\n".join(context_meta_chunks)
-
-        # ------------------------------
-        # GENERATION
-        # ------------------------------
-        system_instructions = (
+    def generate(self, query: str, context: str):
+        system = (
             "You are an expert scientific research assistant. "
             "Use the provided context to answer accurately."
         )
@@ -176,52 +142,108 @@ def qa_panel(client):
 User query: {query}
 
 --- BEGIN CONTEXT ---
-{context_meta}
+{context}
 --- END CONTEXT ---
 
 Answer:
 """.strip()
 
         placeholder = st.empty()
-        answer_text = ""
+        answer = ""
 
-        with client.chat.completions.stream(
+        with self.client.chat.completions.stream(
             model=st.session_state.gpt_model,
             messages=[
-                {"role": "system", "content": system_instructions},
+                {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
             temperature=st.session_state.temperature,
         ) as stream:
             for event in stream:
                 if event.type == "content.delta":
-                    answer_text += event.delta
-                    placeholder.markdown(answer_text + "▌")
+                    answer += event.delta
+                    placeholder.markdown(answer + "▌")
                     time.sleep(STREAM_DELAY)
                 elif event.type == "content.done":
-                    placeholder.markdown(answer_text)
+                    placeholder.markdown(answer)
 
-        st.session_state.last_query = query
-        st.session_state.last_answer = answer_text
-        st.session_state.context_meta = context_meta
+        return answer
 
-    # ------------------------------
-    # SAVE Q&A
-    # ------------------------------
+
+# -------------------------
+# UI
+# -------------------------
+def qa_panel(client):
+    st.header("❓ Ask a Question")
+
+    has_key = st.session_state.get("api_verified", False)
+    has_kb = st.session_state.get("index") is not None
+    disabled = not (has_key and has_kb)
+
+    if not has_key:
+        st.info("ℹ️ Please set a valid API key.")
+    elif not has_kb:
+        st.info("ℹ️ Please build or load a Knowledge-Base.")
+
+    # ---- defaults
+    st.session_state.setdefault("gpt_model", "gpt-4.1-2025-04-14")
+    st.session_state.setdefault("last_query", "")
+    st.session_state.setdefault("last_answer", "")
+    st.session_state.setdefault("context_meta", "")
+
+    model_selector(_load_model_options(client))
+    advanced_controls()
+
+    query = st.text_area(
+        "Ask your question:",
+        height=280,
+        disabled=disabled,
+    )
+
+    st.markdown("#### 📎 Add any relevant file(s) for this question (optional)")
+    uploaded_files = st.file_uploader(
+        "Upload PDFs/TXT/CSV/XLSX or images:",
+        type=[
+            "pdf", "txt", "csv", "xlsx",
+            "png", "jpg", "jpeg", "gif", "bmp", "tif", "tiff",
+        ],
+        accept_multiple_files=True,
+        disabled=disabled,
+    )
+    
+    col1, _, col3 = st.columns([1, 2, 1])
+    answer_clicked = col1.button(
+        "💬 Answer", use_container_width=True, disabled=disabled
+    )
+    save_clicked = col3.button(
+        "💾 Save last Q&A", use_container_width=True, disabled=disabled
+    )
+
+    engine = QAEngine(client)
+
+    if answer_clicked and query:
+        with st.spinner("🔍 Retrieving context..."):
+            context = engine.retrieve(query)
+
+        answer = engine.generate(query, context)
+
+        st.session_state.update(
+            last_query=query,
+            last_answer=answer,
+            context_meta=context,
+        )
+
     if save_clicked and st.session_state.last_answer:
-        save_path = Path("outputs/qa_pairs.docx")
-        doc = DocxDocument(save_path) if save_path.exists() else DocxDocument()
-        doc.add_heading("Question:", level=2)
+        path = Path("outputs/qa_pairs.docx")
+        doc = DocxDocument(path) if path.exists() else DocxDocument()
+        doc.add_heading("Question:", 2)
         doc.add_paragraph(st.session_state.last_query)
-        doc.add_heading("Answer:", level=2)
+        doc.add_heading("Answer:", 2)
         doc.add_paragraph(st.session_state.last_answer)
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        doc.save(save_path)
-        st.success(f"✅ Saved to {save_path}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(path)
+        st.success(f"✅ Saved to {path}")
 
-    # ------------------------------
-    # CONTEXT VIEW
-    # ------------------------------
     if st.session_state.context_meta:
         st.divider()
         with st.expander("📚 Retrieved Context"):

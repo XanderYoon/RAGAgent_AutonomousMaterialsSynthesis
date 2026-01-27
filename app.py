@@ -3,7 +3,7 @@ import streamlit as st
 
 from state.session import init_session
 
-from ui.API_wall import API_entry
+from ui.API_setup import API_entry
 from ui.kb_setup import kb_setup
 from ui.qa_panel import qa_panel
 
@@ -36,7 +36,7 @@ if st.session_state.api_verified:
 
 kb_setup(
     client=client,
-    embeddings_obj=embeddings_obj,
+    embeddings=embeddings_obj,
 )
 
 st.divider()
