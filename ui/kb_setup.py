@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 import streamlit as st
-from RAG.retrieval.kb_builder import KnowledgeBaseBuilder
+from RAG.retrieval.kb_builder import KnowledgeBaseBuilder, KnowledgeBaseError
 
 # -------------------------
 # Knowledge-Base Setup UI
@@ -12,6 +12,31 @@ def _dequote_path(path):
     if path is None:
         return path
     return path.strip().strip('"').strip("'")
+
+
+class StreamlitKBCallbacks:
+    def __init__(self):
+        self._bars = {}
+
+    def info(self, msg):
+        st.write(msg)
+
+    def warning(self, msg):
+        st.warning(msg)
+
+    def success(self, msg):
+        st.success(msg)
+
+    def progress(self, phase, current, total):
+        if total <= 0:
+            return
+        if phase not in self._bars:
+            self._bars[phase] = st.progress(0)
+        pct = int(current / max(total, 1) * 100)
+        self._bars[phase].progress(pct)
+
+    def spinner(self, msg):
+        return st.spinner(msg)
 
 
 def kb_setup(client, embeddings):
@@ -67,6 +92,7 @@ def kb_setup(client, embeddings):
         )
 
         if st.button("Build",disabled = not has_valid_key):
+            # Sanity checks
             if not os.path.isdir(pdf_dir):
                 st.error("The provided folder path does not exist!")
                 st.stop()
@@ -74,8 +100,14 @@ def kb_setup(client, embeddings):
             if not pdf_files:
                 st.error("No PDF files found in the selected folder!")
                 st.stop()
-                
-            kb.build(pdf_dir, index_path, meta_path, graphrag_dir, model)
+
+            callbacks = StreamlitKBCallbacks()
+            try:
+                kb.build(pdf_dir, index_path, meta_path, graphrag_dir, model, callbacks)
+            except KnowledgeBaseError as exc:
+                st.error(str(exc))
+                return
+
             st.success("✅ Knowledge-Base built")
 
     elif mode == "📤 Load":
@@ -102,11 +134,22 @@ def kb_setup(client, embeddings):
             )
         )
         if st.button("Load", disabled = not has_valid_key):
+            # Sanity checks
             if not os.path.isdir(graphrag_dir):
                 st.error("The provided folder path does not exist!")
                 st.stop()
-            
-            kb.load(index_path, meta_path, graphrag_dir)
+            if not os.path.isfile(index_path):
+                st.error("Index file not found!")
+                st.stop()
+            if not os.path.isfile(meta_path):
+                st.error("Metadata file not found!")
+                st.stop()
+
+            try:
+                kb.load(index_path, meta_path, graphrag_dir)
+            except KnowledgeBaseError as exc:
+                st.error(str(exc))
+                return
 
             required = [
                 "entities.parquet",
@@ -130,7 +173,7 @@ def kb_setup(client, embeddings):
                 st.success("✅ Knowledge-Graph loaded successfully!")
 
 
-    else:
+    elif mode == "➕ Append":
         exist_index_path = st.text_input(
             "🧠 Existing index file path (.index)",
             value="outputs/index.index",
@@ -157,5 +200,29 @@ def kb_setup(client, embeddings):
         )
 
         if st.button("➕ Append to Knowledge-Base", disabled=not has_valid_key):
-            kb.append(exist_index_path, exist_meta_path, append_folder, graphrag_dir)
-            st.success("✅ Knowledge-Base appended")
+            # Sanity checks
+            if not os.path.isfile(exist_index_path):
+                st.error("Existing FAISS index file not found!")
+                st.stop()
+            if not os.path.isfile(exist_meta_path):
+                st.error("Existing metadata file not found!")
+                st.stop()
+            if not os.path.isdir(append_folder):
+                st.error("Append folder does not exist!")
+                st.stop()
+            if not os.path.isdir(graphrag_dir):
+                st.error("Knowledge-Graph directory not found!")
+                st.stop()
+
+            callbacks = StreamlitKBCallbacks()
+            try:
+                kb.append(
+                    exist_index_path,
+                    exist_meta_path,
+                    append_folder,
+                    graphrag_dir,
+                    callbacks,
+                )
+            except KnowledgeBaseError as exc:
+                st.error(str(exc))
+                return
