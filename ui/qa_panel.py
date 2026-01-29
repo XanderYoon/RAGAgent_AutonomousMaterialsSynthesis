@@ -6,6 +6,8 @@ from docx import Document as DocxDocument
 from RAG.generation.model_selector import load_model_options
 from RAG.generation.streaming import stream_answer
 from RAG.retrieval.retriever import QAContextRetriever
+from ingestion.loaders import process_uploads_for_session
+from config import EMBEDDING_DIMENSIONS
 
 
 # -------------------------
@@ -91,12 +93,53 @@ def qa_panel(client):
     )
 
     retriever = QAContextRetriever()
+    class _GraphCallbacks:
+        def info(self, msg):
+            st.info(msg)
+
+        def warning(self, msg):
+            st.warning(msg)
 
     if answer_clicked and query:
-        with st.spinner("🔍 Retrieving context..."):
-            context = retriever.retrieve(query)
+        with st.spinner("📂 Processing uploaded files..."):
+            try:
+                n_text, n_imgs = process_uploads_for_session(
+                    uploaded_files=_uploaded_files,
+                    client=client,
+                    embedding_model=st.session_state.embedding_model,
+                    dimension=EMBEDDING_DIMENSIONS[st.session_state.embedding_model],
+                )
+                if n_text or n_imgs:
+                    st.success(
+                        f"✅ Processed {n_text} text chunks and {n_imgs} image(s) from the uploaded files!"
+                    )
+            except Exception as exc:
+                st.session_state.upload_db = None
+                st.session_state.upload_meta = []
+                st.session_state.upload_images = []
+                st.error(f"❌ Upload processing failed: {exc}")
 
-        answer = stream_answer(client, query, context)
+            if st.session_state.get("upload_meta") or st.session_state.get("upload_images"):
+                st.caption(
+                    f"Uploads ready: {len(st.session_state.get('upload_meta', []))} text chunks, "
+                    f"{len(st.session_state.get('upload_images', []))} images!"
+                )
+
+        with st.spinner("🔍 Retrieving context..."):
+            context = retriever.retrieve(
+                query,
+                use_uploads=True,
+                use_graphrag=True,
+                callbacks=_GraphCallbacks(),
+            )
+        st.markdown("### 💡 Answer")
+
+        answer = stream_answer(
+            client,
+            query,
+            context,
+            images=st.session_state.get("upload_images"),
+        )
 
         st.session_state.update(
             last_query=query,

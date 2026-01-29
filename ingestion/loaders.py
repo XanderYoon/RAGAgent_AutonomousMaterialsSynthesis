@@ -1,23 +1,16 @@
-import fitz
-import io
 import base64
+import io
 import mimetypes
+
+import fitz
 import pandas as pd
 import streamlit as st
 from langchain_openai import OpenAIEmbeddings
-from ingestion.cleaners import remove_junk_sections, remove_junk_lines
-from ingestion.chunkers import chunk_text2
-import numpy as np
-from config import (
-    TOKENS_PER_CHUNK,
-    WORDS_PER_CHUNK_OVERLAP
-)
-from langchain_community.vectorstores import FAISS
 
-from langchain_community.docstore.in_memory import InMemoryDocstore
-from langchain_core.documents import Document
-import faiss
-from config import ENC
+from config import ENC, TOKENS_PER_CHUNK, WORDS_PER_CHUNK_OVERLAP
+from ingestion.chunkers import chunk_text2
+from ingestion.cleaners import remove_junk_sections, remove_junk_lines
+from ingestion.faiss_store import build_faiss_from_embeddings
 
 # ------------------------------
 # PDF
@@ -58,9 +51,43 @@ def _to_data_url(file_bytes, mime_type="image/png"):
     b64 = base64.b64encode(file_bytes).decode("utf-8")
     return f"data:{mime_type};base64,{b64}"
 
+def _get_cb(callbacks, name):
+    if callbacks is None:
+        return None
+    return getattr(callbacks, name, None)
 
 
-def build_upload_bundle(uploaded_files, client, embedding_model, dimension):
+def _call(cb, *args, **kwargs):
+    if cb:
+        cb(*args, **kwargs)
+
+
+def _is_image(filename):
+    return filename.lower().endswith(
+        (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff")
+    )
+
+
+def _is_text_like(filename):
+    name = filename.lower()
+    return name.endswith((".pdf", ".txt", ".csv", ".xlsx"))
+
+
+def _extract_text_from_upload(name, data):
+    if name.lower().endswith(".pdf"):
+        with fitz.open(stream=data, filetype="pdf") as doc:
+            return "\n".join(page.get_text() for page in doc)
+    if name.lower().endswith(".txt"):
+        return data.decode("utf-8", errors="ignore")
+    if name.lower().endswith((".csv", ".xlsx")):
+        return _parse_table_file(data, name)
+    return ""
+
+
+# ------------------------------
+# Uploaded files
+# ------------------------------
+def build_upload_bundle(uploaded_files, client, embedding_model, dimension, callbacks=None, api_key=None):
     """
     Build in-memory FAISS for uploaded *text-like* files and collect images.
     Returns: (upload_db, text_meta, images)
@@ -72,82 +99,110 @@ def build_upload_bundle(uploaded_files, client, embedding_model, dimension):
     text_meta = []
     images = []
 
+    if not uploaded_files:
+        return None, [], []
+
     for uf in uploaded_files:
         name = uf.name
         mime = uf.type or mimetypes.guess_type(name)[0] or ""
         data = uf.getvalue()  # bytes
 
         # Images
-        if name.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff")):
+        if _is_image(name):
             data_url = _to_data_url(data, mime or "image/png")
             images.append({"name": name, "data_url": data_url})
             continue
 
         # Text-like docs
-        text = ""
-        if name.lower().endswith(".pdf"):
-            try:
-                with fitz.open(stream=data, filetype="pdf") as doc:
-                    text = "\n".join(page.get_text() for page in doc)
-            except Exception as e:
-                st.warning(f"⚠️ Could not read PDF {name}: {e}")
-                continue
-        elif name.lower().endswith(".txt"):
-            text = data.decode("utf-8", errors="ignore")
-        elif name.lower().endswith(".csv") or name.lower().endswith(".xlsx"):
-            text = _parse_table_file(data, name)
-        else:
-            st.warning(f"⚠️ Unsupported file type: {name} (supported: pdf/txt/csv/xlsx + images)")
+        if not _is_text_like(name):
+            _call(
+                _get_cb(callbacks, "warning"),
+                (
+                    f"⚠️ Unsupported file type: {name} "
+                    f"(supported: pdf/txt/csv/xlsx + images)"
+                ),
+            )
+            continue
+
+        try:
+            text = _extract_text_from_upload(name, data)
+        except Exception as exc:
+            _call(_get_cb(callbacks, "warning"), f"⚠️ Could not read {name}: {exc}")
             continue
 
         # Clean + chunk
         text = remove_junk_sections(text)
         text = remove_junk_lines(text)
         chunks = chunk_text2(
-            text, max_tokens=TOKENS_PER_CHUNK, tokenizer=ENC, overlap=WORDS_PER_CHUNK_OVERLAP
+            text,
+            max_tokens=TOKENS_PER_CHUNK,
+            tokenizer=ENC,
+            overlap=WORDS_PER_CHUNK_OVERLAP,
         )
         for i, ch in enumerate(chunks):
             text_chunks.append(ch)
-            text_meta.append({
-                "source": f"uploaded/{name}",
-                "chunk_id": i,
-                "text": ch,
-                "embedding_model": embedding_model
-            })
+            text_meta.append(
+                {
+                    "source": f"uploaded/{name}",
+                    "chunk_id": i,
+                    "text": ch,
+                    "embedding_model": embedding_model,
+                }
+            )
 
     # Build FAISS for uploaded text
     upload_db = None
     if text_chunks:
-        BATCH = 64
+        batch_size = 64
         embs = []
-        for i in range(0, len(text_chunks), BATCH):
-            batch = text_chunks[i:i + BATCH]
+        for i in range(0, len(text_chunks), batch_size):
+            batch = text_chunks[i : i + batch_size]
             resp = client.embeddings.create(input=batch, model=embedding_model)
             embs.extend([d.embedding for d in resp.data])
 
-        emb_mat = np.array(embs, dtype="float32")
-        index = faiss.IndexFlatL2(dimension)
-        index.add(emb_mat)
-
-        ids = [str(i) for i in range(len(text_meta))]
-        docs_dict = {
-            ids[i]: Document(
-                page_content=text_meta[i]["text"],
-                metadata={
-                    "source": text_meta[i]["source"], 
-                    "chunk_id": text_meta[i]["chunk_id"],
-                    "original_content": text_meta[i]["text"], 
-                }
-            ) for i in range(len(text_meta))
-        }
-        docstore = InMemoryDocstore(docs_dict)
-        index_to_docstore_id = {i: ids[i] for i in range(len(ids))}
-
-        upload_db = FAISS(
-            embedding_function=OpenAIEmbeddings(model=embedding_model,api_key=st.session_state.api_key),
-            index=index,
-            docstore=docstore,
-            index_to_docstore_id=index_to_docstore_id,
+        embedding_fn = OpenAIEmbeddings(
+            model=embedding_model,
+            api_key=api_key or st.session_state.api_key,
+        )
+        _, upload_db, _ = build_faiss_from_embeddings(
+            embs,
+            text_meta,
+            embedding_fn,
+            dimension,
         )
 
     return upload_db, text_meta, images
+
+
+def process_uploads_for_session(
+    uploaded_files,
+    client,
+    embedding_model,
+    dimension,
+    callbacks=None,
+    api_key=None,
+):
+    """Build uploads and store results in Streamlit session_state.
+
+    Returns: (num_text_chunks, num_images)
+    """
+    if not uploaded_files:
+        st.session_state.upload_db = None
+        st.session_state.upload_meta = []
+        st.session_state.upload_images = []
+        return 0, 0
+
+    upload_db, text_meta, images = build_upload_bundle(
+        uploaded_files=uploaded_files,
+        client=client,
+        embedding_model=embedding_model,
+        dimension=dimension,
+        callbacks=callbacks,
+        api_key=api_key,
+    )
+
+    st.session_state.upload_db = upload_db
+    st.session_state.upload_meta = text_meta
+    st.session_state.upload_images = images
+
+    return len(text_meta), len(images)
