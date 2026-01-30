@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 from langchain_openai import OpenAIEmbeddings
 
-from config import ENC, TOKENS_PER_CHUNK, WORDS_PER_CHUNK_OVERLAP
+from state.config import ENC, TOKENS_PER_CHUNK, WORDS_PER_CHUNK_OVERLAP
 from ingestion.chunkers import chunk_text2
 from ingestion.cleaners import remove_junk_sections, remove_junk_lines
 from ingestion.faiss_store import build_faiss_from_embeddings

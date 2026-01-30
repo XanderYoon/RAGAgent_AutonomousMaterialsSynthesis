@@ -6,7 +6,7 @@ import faiss
 import numpy as np
 from langchain_community.retrievers import BM25Retriever
 
-from config import (
+from state.config import (
     EMBEDDING_DIMENSIONS,
     TOKENS_PER_CHUNK,
     WORDS_PER_CHUNK_OVERLAP,

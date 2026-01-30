@@ -7,7 +7,7 @@ from RAG.generation.model_selector import load_model_options
 from RAG.generation.streaming import stream_answer
 from RAG.retrieval.retriever import QAContextRetriever
 from ingestion.loaders import process_uploads_for_session
-from config import EMBEDDING_DIMENSIONS
+from state.config import EMBEDDING_DIMENSIONS
 
 
 # -------------------------

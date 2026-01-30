@@ -2,7 +2,7 @@ import time
 
 import streamlit as st
 
-from config import STREAM_DELAY
+from state.config import STREAM_DELAY
 
 _IMAGE_MODELS = {"gpt-4o-2024-08-06", "gpt-4.1-2025-04-14"}
 

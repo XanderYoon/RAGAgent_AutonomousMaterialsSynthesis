@@ -1,6 +1,6 @@
 # state/session.py
 import streamlit as st
-from config import ENC
+from state.config import ENC
 
 
 def init_session():

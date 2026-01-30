@@ -6,7 +6,7 @@ from langchain.retrievers.document_compressors import LLMChainExtractor
 from langchain_community.document_transformers import LongContextReorder
 from langchain_openai import ChatOpenAI
 
-from config import TOP_K_TEXT_FAISS, TOP_K_UPLOAD_FAISS
+from state.config import TOP_K_TEXT_FAISS, TOP_K_UPLOAD_FAISS
 from RAG.retrieval.graphrag_query import query_graphrag, GraphRAGQueryError
 
 
