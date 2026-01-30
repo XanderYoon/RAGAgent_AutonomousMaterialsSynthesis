@@ -80,3 +80,93 @@ RAG/
 2. Define MCP tool schemas and response shapes.
 3. Implement thin wrappers in `RAG/mcp/tools.py`.
 4. Add tests (unit + integration).
+
+## Implementation Plan (Initial Slice: Knowledge Base)
+### Phase 0: Package scaffolding
+- Add `RAG/mcp/` subpackage with `app.py`, `tools.py`, and `schemas.py`.
+- Add `RAG/services/` subpackage with `kb_service.py` for Streamlit-free logic.
+
+### Phase 1: Stateless KB tools (first vertical slice)
+- Implement service functions:
+  - `build_kb(...)` writes FAISS index + metadata to disk and optionally runs GraphRAG.
+  - `load_kb(...)` validates and inspects an existing KB on disk.
+  - `append_kb(...)` appends new PDFs to an existing KB and updates GraphRAG.
+- MCP tools wrap the service functions with minimal input validation.
+- Outputs include summary fields and warnings (no Streamlit session state).
+
+### Phase 2: Retrieval + answer tools (next slice)
+- Implement `retrieve.context` to return both `context_text` and `sources`.
+- Implement `generate_answer` using the existing streaming/generation core.
+- Implement a combined tool `retrieve_and_answer` that calls the two in sequence.
+
+### Phase 3: Tests
+- Unit tests for service functions (happy path + error path).
+- MCP wrapper tests for schema validation and error translation.
+- One integration test that runs the MCP app and hits `kb.build`.
+
+## Status Update (What’s Done)
+- Created MCP scaffolding: `RAG/mcp/app.py`, `RAG/mcp/tools.py`, `RAG/mcp/schemas.py`.
+- Added Streamlit-free KB service layer in `RAG/services/kb_service.py` with build/load/append.
+- Added Streamlit-free retrieval and generation services in `RAG/services/retrieval_service.py` and `RAG/services/generation_service.py`.
+- Added smoke scripts:
+  - `scripts/mcp_smoke_kb.py` (local `load_kb` service)
+  - `scripts/mcp_smoke_kb_build.py` (build KB, requires API key)
+  - `scripts/mcp_smoke_kb_append.py` (append KB, requires API key)
+  - `scripts/mcp_smoke_http_kb_load.py` (HTTP MCP call to `kb_load`)
+  - `scripts/mcp_smoke_retrieve_context.py` (HTTP MCP call to `retrieve_context_tool`)
+  - `scripts/mcp_smoke_retrieve_and_answer.py` (HTTP MCP call to `retrieve_and_answer_tool`)
+- Added FastMCP dependency in `requirements.txt`.
+
+## Remaining Work
+- Add tests (unit + integration) for MCP tools and service functions.
+- Add an MCP smoke script for `generate_answer_tool`.
+
+## Smoke Scripts (Commands)
+### Environment setup
+```
+source .venv/bin/activate
+export OPENAI_API_KEY=...
+```
+
+### Local service smoke (no MCP)
+```
+python3 scripts/mcp_smoke_kb.py
+```
+
+### KB build (requires OpenAI API key)
+```
+python3 scripts/mcp_smoke_kb_build.py
+```
+
+### KB append (requires OpenAI API key)
+```
+python3 scripts/mcp_smoke_kb_append.py
+```
+
+### MCP HTTP: kb_load
+```
+python3 scripts/mcp_smoke_http_kb_load.py
+```
+
+### MCP HTTP: retrieve_context_tool
+```
+export KB_INDEX_PATH=/path/to/index.faiss
+export KB_META_PATH=/path/to/meta.pkl
+export KB_GRAPHRAG_DIR=/path/to/graphrag  # optional
+python3 scripts/mcp_smoke_retrieve_context.py
+```
+
+### MCP HTTP: retrieve_and_answer_tool
+```
+export KB_INDEX_PATH=/path/to/index.faiss
+export KB_META_PATH=/path/to/meta.pkl
+export KB_GRAPHRAG_DIR=/path/to/graphrag  # optional
+export QA_MODEL=gpt-4o-mini
+python3 scripts/mcp_smoke_retrieve_and_answer.py
+```
+
+### MCP HTTP: generate_answer_tool
+```
+export QA_MODEL=gpt-4o-mini
+python3 scripts/mcp_smoke_generate_answer.py
+```

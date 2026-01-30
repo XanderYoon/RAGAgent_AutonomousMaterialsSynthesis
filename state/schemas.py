@@ -2,7 +2,9 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-
+# ------------------------------
+# Pydantic schemas for object/type consistency
+# ------------------------------
 class ChunkMetadata(BaseModel):
     source: str
     chunk_id: int
