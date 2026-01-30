@@ -17,3 +17,4 @@ temp*
 .streamlit/
 .DS_Store
 .log
+mcp_demo.sh
