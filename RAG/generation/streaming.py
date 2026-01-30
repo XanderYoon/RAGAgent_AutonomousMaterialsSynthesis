@@ -37,13 +37,10 @@ def stream_answer(client, query: str, context: str, images=None) -> str:
     placeholder = st.empty()
     answer = ""
 
-    if model == "o4-mini-deep-research-2025-06-26":
-        with client.responses.stream(
-            model=model,
-            instructions=system,
-            tools=[{"type": "web_search_preview"}],
-            input=prompt,
-        ) as stream:
+    def _stream_responses(kwargs) -> str:
+        nonlocal answer
+        answer = ""
+        with client.responses.stream(**kwargs) as stream:
             for event in stream:
                 if event.type == "response.output_text.delta":
                     answer += event.delta
@@ -53,37 +50,35 @@ def stream_answer(client, query: str, context: str, images=None) -> str:
                     placeholder.markdown(answer)
         return answer
 
-    if model in {"gpt-5", "gpt-5-thinking", "gpt-5-pro"}:
-        model_id = "gpt-5" if model == "gpt-5-thinking" else model
+    use_images = bool(images) and model in _IMAGE_MODELS
+    if not use_images:
+        model_id = model
         kwargs = {"model": model_id, "instructions": system, "input": prompt}
-        if model == "gpt-5-thinking":
+        if model.endswith("-thinking"):
+            model_id = model[: -len("-thinking")]
+            kwargs["model"] = model_id
             kwargs["reasoning"] = {"effort": "high"}
+        if "deep-research" in model or st.session_state.get("enable_web_search", False):
+            kwargs["tools"] = [{"type": "web_search_preview"}]
+
         try:
-            with client.responses.stream(**kwargs) as stream:
-                for event in stream:
-                    if event.type == "response.output_text.delta":
-                        answer += event.delta
-                        placeholder.markdown(answer + "▌")
-                        time.sleep(STREAM_DELAY)
-                    elif event.type in {"response.output_text.done", "response.completed"}:
-                        placeholder.markdown(answer)
-            return answer
+            return _stream_responses(kwargs)
         except Exception:
-            response = client.responses.create(**kwargs)
-            answer = response.output_text
-            placeholder.markdown(answer)
-            return answer
-    else:
-        kwargs = {"model": model, "instructions": system, "input": prompt}
-        with client.responses.stream(**kwargs) as stream:
-            for event in stream:
-                if event.type == "response.output_text.delta":
-                    answer += event.delta
-                    placeholder.markdown(answer + "▌")
-                    time.sleep(STREAM_DELAY)
-                elif event.type in {"response.output_text.done", "response.completed"}:
-                    placeholder.markdown(answer)
-                    
+            if "tools" in kwargs:
+                kwargs.pop("tools", None)
+                try:
+                    return _stream_responses(kwargs)
+                except Exception:
+                    pass
+            try:
+                response = client.responses.create(**kwargs)
+                answer = response.output_text
+                placeholder.markdown(answer)
+                return answer
+            except Exception:
+                pass
+
+    answer = ""
     user_content = prompt
     if images and model in _IMAGE_MODELS:
         content = [{"type": "text", "text": prompt}]

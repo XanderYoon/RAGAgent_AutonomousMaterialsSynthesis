@@ -1,4 +1,5 @@
 def chunk_text(text, max_tokens=None, tokenizer=None):
+    """Split text into token-bounded chunks without overlap."""
     if max_tokens is None:
         raise ValueError("max_tokens must be provided")
     if tokenizer is None:
@@ -23,6 +24,7 @@ def chunk_text(text, max_tokens=None, tokenizer=None):
 
 
 def chunk_text2(text, max_tokens=None, tokenizer=None, overlap=None):
+    """Split text into token-bounded chunks with overlap between chunks."""
     if max_tokens is None:
         raise ValueError("max_tokens must be provided")
     if tokenizer is None:

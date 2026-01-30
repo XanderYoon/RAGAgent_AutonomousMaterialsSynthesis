@@ -161,6 +161,7 @@ class KnowledgeBaseBuilder:
         self._register(index, metadata, db, docs, graphrag_dir)
 
     def load(self, index_path, meta_path, graphrag_dir):
+        """Loads an already created/existing knowledge base"""
         try:
             index = faiss.read_index(index_path)
             with open(meta_path, "rb") as f:

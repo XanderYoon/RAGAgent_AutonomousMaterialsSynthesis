@@ -2,6 +2,7 @@ import re
 import pycountry
 
 def remove_junk_sections(text, section_markers=None):
+    """Remove trailing sections like references or acknowledgments from text."""
     if section_markers is None:
         section_markers = [
             "references",
@@ -18,6 +19,7 @@ def remove_junk_sections(text, section_markers=None):
 
 
 def remove_junk_lines(text, junk_patterns=None):
+    """Filter out lines that match common junk patterns and metadata."""
     if junk_patterns is None:
         junk_patterns = [
             "doi:", "et al.", "https://", "http://", ".org", ".com", "conflict of interest",
