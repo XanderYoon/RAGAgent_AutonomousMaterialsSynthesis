@@ -7,6 +7,7 @@ from langchain_community.document_transformers import LongContextReorder
 from langchain_openai import ChatOpenAI
 
 from state.config import TOP_K_TEXT_FAISS, TOP_K_UPLOAD_FAISS
+from state.schemas import RetrievalRequest
 from RAG.retrieval.graphrag_query import query_graphrag, GraphRAGQueryError
 
 
@@ -31,12 +32,20 @@ class QAContextRetriever:
         use_graphrag: bool = True,
         callbacks=None,
     ) -> str:
+        req = RetrievalRequest(
+            query=query,
+            use_uploads=use_uploads,
+            use_graphrag=use_graphrag,
+            top_k_faiss=TOP_K_TEXT_FAISS,
+            top_k_uploads=TOP_K_UPLOAD_FAISS,
+            diversity=st.session_state.diversity,
+        )
         vs = st.session_state.db.as_retriever(
             search_type="mmr",
             search_kwargs={
-                "k": TOP_K_TEXT_FAISS,
-                "fetch_k": TOP_K_TEXT_FAISS * 2,
-                "lambda_mult": 1.0 - st.session_state.diversity,
+                "k": req.top_k_faiss,
+                "fetch_k": req.top_k_faiss * 2,
+                "lambda_mult": 1.0 - req.diversity,
             },
         )
 
@@ -64,13 +73,13 @@ class QAContextRetriever:
         docs = LongContextReorder().transform_documents(docs)
 
         upload_docs = []
-        if use_uploads and st.session_state.get("upload_db") is not None:
+        if req.use_uploads and st.session_state.get("upload_db") is not None:
             vs_upload = st.session_state.upload_db.as_retriever(
                 search_type="mmr",
                 search_kwargs={
-                    "k": TOP_K_UPLOAD_FAISS,
-                    "fetch_k": TOP_K_UPLOAD_FAISS * 2,
-                    "lambda_mult": 1.0 - st.session_state.diversity,
+                    "k": req.top_k_uploads,
+                    "fetch_k": req.top_k_uploads * 2,
+                    "lambda_mult": 1.0 - req.diversity,
                 },
             )
             mq_upload = MultiQueryRetriever.from_llm(
@@ -94,13 +103,13 @@ class QAContextRetriever:
             for d in merged_docs
         ]
 
-        if use_uploads and st.session_state.get("upload_images"):
+        if req.use_uploads and st.session_state.get("upload_images"):
             for img in st.session_state.upload_images:
                 context_lines.append(
                     f"[uploaded/{img['name']} | image]: (image attached)"
                 )
 
-        if use_graphrag:
+        if req.use_graphrag:
             graph_root = st.session_state.get("graphrag")
             if graph_root and os.path.isdir(graph_root):
                 try:

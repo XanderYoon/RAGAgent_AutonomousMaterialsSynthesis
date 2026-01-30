@@ -8,6 +8,7 @@ import streamlit as st
 from langchain_openai import OpenAIEmbeddings
 
 from state.config import ENC, TOKENS_PER_CHUNK, WORDS_PER_CHUNK_OVERLAP
+from state.schemas import ChunkMetadata, UploadBundle
 from ingestion.chunkers import chunk_text2
 from ingestion.cleaners import remove_junk_sections, remove_junk_lines
 from ingestion.faiss_store import build_faiss_from_embeddings
@@ -141,14 +142,24 @@ def build_upload_bundle(uploaded_files, client, embedding_model, dimension, call
         )
         for i, ch in enumerate(chunks):
             text_chunks.append(ch)
-            text_meta.append(
-                {
-                    "source": f"uploaded/{name}",
-                    "chunk_id": i,
-                    "text": ch,
-                    "embedding_model": embedding_model,
-                }
+            meta = ChunkMetadata(
+                source=f"uploaded/{name}",
+                chunk_id=i,
+                text=ch,
+                embedding_model=embedding_model,
             )
+            text_meta.append(meta.model_dump())
+
+    # Validate upload bundle schema
+    bundle = UploadBundle.model_validate(
+        {
+            "text_meta": text_meta,
+            "images": images,
+        }
+    )
+    bundle_data = bundle.model_dump()
+    text_meta = bundle_data["text_meta"]
+    images = bundle_data["images"]
 
     # Build FAISS for uploaded text
     upload_db = None

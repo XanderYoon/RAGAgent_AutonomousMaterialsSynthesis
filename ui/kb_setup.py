@@ -2,6 +2,9 @@ import os
 from pathlib import Path
 import streamlit as st
 from RAG.retrieval.kb_builder import KnowledgeBaseBuilder, KnowledgeBaseError
+from pydantic import ValidationError
+
+from state.schemas import KBBuildRequest, KBLoadRequest, KBAppendRequest
 
 # -------------------------
 # Knowledge-Base Setup UI
@@ -92,6 +95,17 @@ def kb_setup(client, embeddings):
         )
 
         if st.button("Build",disabled = not has_valid_key):
+            try:
+                _ = KBBuildRequest(
+                    pdf_dir=pdf_dir,
+                    index_path=index_path,
+                    meta_path=meta_path,
+                    graphrag_dir=graphrag_dir,
+                    embedding_model=model,
+                )
+            except ValidationError as exc:
+                st.error(f"Invalid build parameters: {exc}")
+                st.stop()
             # Sanity checks
             if not os.path.isdir(pdf_dir):
                 st.error("The provided folder path does not exist!")
@@ -134,6 +148,15 @@ def kb_setup(client, embeddings):
             )
         )
         if st.button("Load", disabled = not has_valid_key):
+            try:
+                _ = KBLoadRequest(
+                    index_path=index_path,
+                    meta_path=meta_path,
+                    graphrag_dir=graphrag_dir,
+                )
+            except ValidationError as exc:
+                st.error(f"Invalid load parameters: {exc}")
+                st.stop()
             # Sanity checks
             if not os.path.isdir(graphrag_dir):
                 st.error("The provided folder path does not exist!")
@@ -200,6 +223,16 @@ def kb_setup(client, embeddings):
         )
 
         if st.button("➕ Append to Knowledge-Base", disabled=not has_valid_key):
+            try:
+                _ = KBAppendRequest(
+                    index_path=exist_index_path,
+                    meta_path=exist_meta_path,
+                    append_folder=append_folder,
+                    graphrag_dir=graphrag_dir,
+                )
+            except ValidationError as exc:
+                st.error(f"Invalid append parameters: {exc}")
+                st.stop()
             # Sanity checks
             if not os.path.isfile(exist_index_path):
                 st.error("Existing FAISS index file not found!")

@@ -18,6 +18,7 @@ from ingestion.embeddings import estimate_embedding_cost
 from ingestion.faiss_store import build_faiss_from_embeddings, load_faiss_from_disk
 from ingestion.graphrag import run_graphrag_cli
 from ingestion.loaders import extract_text_from_pdf
+from state.schemas import ChunkMetadata
 
 
 class KnowledgeBaseError(Exception):
@@ -125,14 +126,13 @@ class KnowledgeBaseBuilder:
                         input=chunk, model=model
                     ).data[0].embedding
                     embeddings.append(emb)
-                    metadata.append(
-                        {
-                            "source": filename,
-                            "chunk_id": j,
-                            "text": chunk,
-                            "embedding_model": model,
-                        }
+                    meta = ChunkMetadata(
+                        source=filename,
+                        chunk_id=j,
+                        text=chunk,
+                        embedding_model=model,
                     )
+                    metadata.append(meta.model_dump())
                 except Exception as exc:
                     _call(
                         _get_cb(callbacks, "warning"),
@@ -262,14 +262,13 @@ class KnowledgeBaseBuilder:
                         input=chunk, model=existing_model
                     )
                     new_embeddings.append(resp.data[0].embedding)
-                    new_metadata.append(
-                        {
-                            "source": filename,
-                            "chunk_id": j,
-                            "text": chunk,
-                            "embedding_model": existing_model,
-                        }
+                    meta = ChunkMetadata(
+                        source=filename,
+                        chunk_id=j,
+                        text=chunk,
+                        embedding_model=existing_model,
                     )
+                    new_metadata.append(meta.model_dump())
                 except Exception as exc:
                     _call(
                         _get_cb(callbacks, "warning"),
