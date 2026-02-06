@@ -21,6 +21,51 @@ from RAG.services.kb_service import build_kb  # noqa: E402
 from state.config import EMBEDDING_DIMENSIONS, ENC  # noqa: E402
 
 
+def _report_has_warnings(report: pytest.TestReport) -> bool:
+    for name, _content in report.sections:
+        if "warning" in name.lower():
+            return True
+    return False
+
+
+def pytest_configure(config):
+    config._passed_with_warnings = []
+
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call" and report.passed:
+        if _report_has_warnings(report):
+            item.config._passed_with_warnings.append(report.nodeid)
+
+
+def pytest_terminal_summary(terminalreporter):
+    stats = terminalreporter.stats
+    total_collected = getattr(terminalreporter, "_numcollected", 0) or 0
+    passed_count = len(stats.get("passed", []))
+    failed_count = len(stats.get("failed", [])) + len(stats.get("error", []))
+    if total_collected:
+        pass_rate = (passed_count / total_collected) * 100
+        line = f"Pass rate: {pass_rate:.0f}%"
+        if failed_count == 0 and passed_count == total_collected:
+            terminalreporter.write_line(
+                f"{line} [PASS]",
+                green=True,
+            )
+        else:
+            terminalreporter.write_line(line)
+
+    passed_with_warnings = getattr(
+        terminalreporter.config, "_passed_with_warnings", []
+    )
+    if not passed_with_warnings:
+        return
+
+    terminalreporter.section("Passed With Warnings")
+
+
 def _write_dummy_kb(root: Path, embedding_model: str):
     dim = EMBEDDING_DIMENSIONS[embedding_model]
     index = faiss.IndexFlatL2(dim)

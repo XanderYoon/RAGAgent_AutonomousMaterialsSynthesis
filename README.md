@@ -39,12 +39,18 @@ The system enables researchers to:
 ```
 .
 ├── app.py                     # Main application (UI + RAG pipeline)
-├── requirements.txt           # Dependencies
+├── assets/                    # Images (Demo)
+├── ingestion/                 # PDF ingestion + indexing helpers
+├── RAG/                       # Core RAG services + MCP tools
+├── state/                     # Config + schemas
+├── tests/                     # Pytest suite
+├── ui/                        # Streamlit UI modules
+├── Dockerfile                 # Container build
+├── pytest.ini                 # Pytest configuration
+├── requirements.txt           # Runtime dependencies
 ├── run_demo_unix.sh           # Linux/MacOS launch script
 ├── run_demo_windows.bat       # Windows launch script
-├── inputs/                    # Example folder for input PDFs
-├── outputs/                   # Example folder for knowledge base index/metadata
-├── assets/                    # Images (Demo)
+├── run_mcp_demo_unix.sh       # MCP demo launcher
 └── README.md                  # Documentation
 ```
 
