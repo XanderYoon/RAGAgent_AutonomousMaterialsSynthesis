@@ -95,6 +95,28 @@ pycountry==24.6.1
 
 ---
 
+## ✅ Testing
+
+Install dev dependencies:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Run unit tests only:
+
+```bash
+pytest
+```
+
+Run integration tests (requires `OPENAI_API_KEY`):
+
+```bash
+pytest -m integration
+```
+
+---
+
 ## 🖥️ Usage Instructions  
 
 ### 1. Verify API Key  

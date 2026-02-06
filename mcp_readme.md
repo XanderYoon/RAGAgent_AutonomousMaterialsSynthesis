@@ -117,10 +117,6 @@ RAG/
   - `scripts/mcp_smoke_retrieve_and_answer.py` (HTTP MCP call to `retrieve_and_answer_tool`)
 - Added FastMCP dependency in `requirements.txt`.
 
-## Remaining Work
-- Add tests (unit + integration) for MCP tools and service functions.
-- Add an MCP smoke script for `generate_answer_tool`.
-
 ## Smoke Scripts (Commands)
 ### Environment setup
 ```
@@ -170,3 +166,62 @@ python3 scripts/mcp_smoke_retrieve_and_answer.py
 export QA_MODEL=gpt-4o-mini
 python3 scripts/mcp_smoke_generate_answer.py
 ```
+
+
+# MCP Insepctor:
+1. Start the MCP server (HTTP):
+
+python3 -c "from RAG.mcp.app import create_app; create_app().run(transport='http', host='127.0.0.1', port=8000)"
+
+2. In MCP Inspector web UI, add a server:
+npx @modelcontextprotocol/inspector
+
+http://127.0.0.1:8000/mcp/
+
+{
+  "query": "What does this KB cover?",
+  "index_path": "/data/Work/ORNL_internship/test_folder/test_index.index",
+  "meta_path": "/data/Work/ORNL_internship/test_folder/test_metadata.pkl",
+  "graphrag_dir": "/data/Work/ORNL_internship/test_folder/graph_kb",
+  "api_key": null,
+  "diversity": 0.3,
+  "top_k_faiss": 5,
+  "use_graphrag": true,
+  "retriever_model": "gpt-4o-mini",
+  "compressor_model": "gpt-4o-mini",
+  "model": "gpt-4o-mini",
+  "system": "You are a helpful assistant.",
+  "enable_web_search": false
+}
+
+
+## TODO
+1. integrate mcp with gpt
+	1. The user would be required to use OpenAI Platforms
+	2. OpenAI Platforms already has RAG implements
+		1. Still requires user to make/insert keys
+	3. ChatGPT already has ACEKnowledgeGraphs
+
+- MCP vs Web App (I think the latter is preferred, and we just make a more catered towards the materials science use case)
+	1. Setup cloud compute would be very cool for me
+		- Dockerize Streamlit app
+		- Push image to ECR
+		- ECS Fargate service (1 task to start)
+		- ALB + ACM cert + Route 53
+		- Store secrets in Secrets Manager
+		- Log to CloudWatch
+		- Put user uploads in **S3** (instead of local disk)
+	2. Host streamlit app on server:
+		1. Reverse proxy (Nginx or Caddy)
+		2. Authentication: SSO or App-level login
+		3. Implement some sort of persistent session store
+		4. Containerize multiple streamlit workers (can create some kind of ELB if needed)
+
+2. knowledge base benchmarking
+3. create pytest suite
+4. Come up with something for Stephen
+
+5. yongtaoliu.github.io/aecroscopy.pyae
+
+
+
