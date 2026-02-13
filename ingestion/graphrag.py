@@ -9,6 +9,7 @@ from langchain_core.retrievers import BaseRetriever
 # Run GraphRAG indexing pipeline
 # ----------------------------------------
 def run_graphrag_cli(root_dir: str, input_dir: str, output_dir: str, api_key: str):
+    """Run GraphRAG initialization and indexing commands. """
     settings_path = Path(root_dir) / "settings.yaml"
     env_path = Path(root_dir) / ".env"
 
@@ -39,7 +40,9 @@ class StaticGraphRetriever(BaseRetriever):
         self.graph_docs = graph_docs
 
     def _get_relevant_documents(self, query, *, run_manager=None):
+        """Return precomputed graph documents for synchronous retrieval. """
         return self.graph_docs
 
     async def _aget_relevant_documents(self, query, *, run_manager=None):
+        """Return precomputed graph documents for asynchronous retrieval."""
         return self.graph_docs

@@ -1,5 +1,17 @@
 def chunk_text(text, max_tokens=None, tokenizer=None):
-    """Split text into token-bounded chunks without overlap."""
+    """Split text into token-limited chunks without overlap.
+
+    Args:
+        text: Raw text to split into chunks.
+        max_tokens: Maximum tokens allowed per chunk.
+        tokenizer: Tokenizer providing an ``encode`` method.
+
+    Returns:
+        Ordered list of text chunks within the token budget.
+
+    Raises:
+        ValueError: If ``max_tokens`` or ``tokenizer`` is not provided.
+    """
     if max_tokens is None:
         raise ValueError("max_tokens must be provided")
     if tokenizer is None:
@@ -24,7 +36,20 @@ def chunk_text(text, max_tokens=None, tokenizer=None):
 
 
 def chunk_text2(text, max_tokens=None, tokenizer=None, overlap=None):
-    """Split text into token-bounded chunks with overlap between chunks."""
+    """Split text into token-limited chunks with word overlap.
+
+    Args:
+        text: Raw text to split into chunks.
+        max_tokens: Maximum tokens allowed per chunk.
+        tokenizer: Tokenizer providing an ``encode`` method.
+        overlap: Number of trailing words to carry into the next chunk.
+
+    Returns:
+        Ordered list of text chunks with overlap between adjacent chunks.
+
+    Raises:
+        ValueError: If ``max_tokens``, ``tokenizer``, or ``overlap`` is missing.
+    """
     if max_tokens is None:
         raise ValueError("max_tokens must be provided")
     if tokenizer is None:

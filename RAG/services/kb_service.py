@@ -22,21 +22,57 @@ from RAG.retrieval.kb_builder import (
 
 
 def _get_cb(callbacks, name):
+    """Get a callback by attribute name from an optional callback container.
+
+    Args:
+        callbacks: Callback container object or ``None``.
+        name: Callback attribute name to retrieve.
+
+    Returns:
+        Callback callable when found, otherwise ``None``.
+    """
     if callbacks is None:
         return None
     return getattr(callbacks, name, None)
 
 
 def _call(cb, *args, **kwargs):
+    """Invoke callback when provided.
+
+    Args:
+        cb: Optional callback callable.
+        *args: Positional arguments forwarded to callback.
+        **kwargs: Keyword arguments forwarded to callback.
+
+    Returns:
+        ``None`` after optional callback invocation.
+    """
     if cb:
         cb(*args, **kwargs)
 
 
 def _resolve_api_key(api_key: str | None) -> str | None:
+    """Resolve API key from explicit argument or environment.
+
+    Args:
+        api_key: API key passed by caller, if any.
+
+    Returns:
+        API key string when available, otherwise ``None``.
+    """
     return api_key or os.environ.get("OPENAI_API_KEY")
 
 
 def _process_pdf(path: Path, enc):
+    """Extract, clean, and chunk a PDF document.
+
+    Args:
+        path: Path to the PDF file.
+        enc: Tokenizer used for chunk sizing.
+
+    Returns:
+        Tuple of ``(text, chunks)`` for downstream embedding.
+    """
     text = extract_text_from_pdf(path)
     text = remove_junk_lines(remove_junk_sections(text))
     chunks = chunk_text2(
@@ -49,6 +85,17 @@ def _process_pdf(path: Path, enc):
 
 
 def _run_graphrag(texts, graphrag_dir: str, api_key: str | None, warnings):
+    """Run GraphRAG indexing for generated text inputs.
+
+    Args:
+        texts: Mapping of filename to extracted text.
+        graphrag_dir: GraphRAG workspace directory path.
+        api_key: Optional API key for GraphRAG execution.
+        warnings: List collecting non-fatal warning messages.
+
+    Returns:
+        ``None`` after attempting indexing.
+    """
     if not graphrag_dir:
         return
 
@@ -72,6 +119,19 @@ def _run_graphrag(texts, graphrag_dir: str, api_key: str | None, warnings):
 
 
 def _append_graphrag(texts, graphrag_dir: str, api_key: str | None):
+    """Append new texts to an existing GraphRAG workspace.
+
+    Args:
+        texts: Mapping of filename to extracted text.
+        graphrag_dir: GraphRAG workspace directory path.
+        api_key: Optional API key for GraphRAG execution.
+
+    Returns:
+        ``None`` after writing inputs and running GraphRAG.
+
+    Raises:
+        GraphRAGWorkspaceError: If API key or workspace folders are missing.
+    """
     if not graphrag_dir:
         return
 
@@ -109,6 +169,27 @@ def build_kb(
     api_key: str | None = None,
     callbacks=None,
 ):
+    """Build a new FAISS knowledge base from PDF files.
+
+    Args:
+        client: OpenAI-compatible client used for embedding calls.
+        embeddings: Embedding function instance used by FAISS wrapper.
+        enc: Tokenizer used for chunk sizing.
+        pdf_dir: Directory containing input PDF files.
+        index_path: Output path for FAISS index file.
+        meta_path: Output path for metadata pickle file.
+        graphrag_dir: Optional GraphRAG workspace directory.
+        embedding_model: Embedding model identifier.
+        run_graphrag: Whether to run GraphRAG indexing after build.
+        api_key: Optional API key override for GraphRAG.
+        callbacks: Optional callback container for progress updates.
+
+    Returns:
+        Dictionary with stable keys: ``total_chunks``, ``total_tokens``, ``estimated_cost``, ``warnings``.
+
+    Raises:
+        KnowledgeBaseBuildError: If inputs are invalid or no chunks/embeddings are produced.
+    """
     if embedding_model not in EMBEDDING_DIMENSIONS:
         raise KnowledgeBaseBuildError(
             f"Unsupported embedding model: {embedding_model}"
@@ -203,6 +284,19 @@ def build_kb(
 
 
 def load_kb(*, index_path: str, meta_path: str, graphrag_dir: str | None):
+    """Validate and inspect a persisted knowledge base on disk.
+
+    Args:
+        index_path: Path to serialized FAISS index file.
+        meta_path: Path to serialized metadata pickle file.
+        graphrag_dir: Optional GraphRAG workspace directory path.
+
+    Returns:
+        Dictionary with stable keys: ``status``, ``embedding_model``, ``dimension``, ``chunk_count``, ``graphrag_dir``.
+
+    Raises:
+        KnowledgeBaseLoadError: If files are missing, unreadable, or contain invalid metadata.
+    """
     index_file = Path(index_path)
     meta_file = Path(meta_path)
 
@@ -269,6 +363,25 @@ def append_kb(
     api_key: str | None = None,
     callbacks=None,
 ):
+    """Append PDF content to an existing FAISS knowledge base.
+
+    Args:
+        client: OpenAI-compatible client used for embedding calls.
+        enc: Tokenizer used for chunk sizing.
+        index_path: Existing FAISS index file path.
+        meta_path: Existing metadata pickle path.
+        append_folder: Directory containing PDFs to append.
+        graphrag_dir: Optional GraphRAG workspace directory.
+        run_graphrag: Whether to update GraphRAG after append.
+        api_key: Optional API key override for GraphRAG.
+        callbacks: Optional callback container for progress updates.
+
+    Returns:
+        Dictionary with stable keys: ``new_chunks``, ``new_tokens``, ``estimated_cost``, ``warnings``.
+
+    Raises:
+        KnowledgeBaseAppendError: If validation fails or append operations cannot complete.
+    """
     index_path = Path(index_path)
     meta_path = Path(meta_path)
     append_folder = Path(append_folder)

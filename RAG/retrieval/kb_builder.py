@@ -42,17 +42,20 @@ class GraphRAGWorkspaceError(KnowledgeBaseError):
 
 
 def _get_cb(callbacks, name):
+    """Get a callback by name from an optional callback container."""
     if callbacks is None:
         return None
     return getattr(callbacks, name, None)
 
 
 def _call(cb, *args, **kwargs):
+    """Invoke callback when provided."""
     if cb:
         cb(*args, **kwargs)
 
 
 def _spinner(callbacks, message):
+    """Get spinner context manager from callbacks or fallback to nullcontext."""
     cb = _get_cb(callbacks, "spinner")
     if cb:
         return cb(message)
@@ -71,6 +74,22 @@ class KnowledgeBaseBuilder:
         self.enc = st.session_state.enc
 
     def build(self, pdf_dir, index_path, meta_path, graphrag_dir, model, callbacks=None):
+        """Build a new knowledge base from PDFs and register it in session state.
+
+        Args:
+            pdf_dir: Directory containing source PDF files.
+            index_path: Output path for the FAISS index file.
+            meta_path: Output path for metadata pickle file.
+            graphrag_dir: GraphRAG workspace directory.
+            model: Embedding model identifier.
+            callbacks: Optional callback container for status updates.
+
+        Returns:
+            ``None`` after writing artifacts and registering in session state.
+
+        Raises:
+            KnowledgeBaseBuildError: If no chunks are produced during processing.
+        """
         dim = EMBEDDING_DIMENSIONS[model]
 
         texts, chunks = {}, {}
@@ -161,7 +180,7 @@ class KnowledgeBaseBuilder:
         self._register(index, metadata, db, docs, graphrag_dir)
 
     def load(self, index_path, meta_path, graphrag_dir):
-        """Loads an already created/existing knowledge base"""
+        """Load an existing knowledge base from disk and register it."""
         try:
             index = faiss.read_index(index_path)
             with open(meta_path, "rb") as f:
@@ -177,7 +196,21 @@ class KnowledgeBaseBuilder:
             raise KnowledgeBaseLoadError("Failed to load knowledge base.") from exc
 
     def append(self, index_path, meta_path, append_folder, graphrag_dir, callbacks=None):
-        """Append new PDFs to an existing knowledge base."""
+        """Append PDFs to an existing knowledge base and refresh session state.
+
+        Args:
+            index_path: Existing FAISS index file path.
+            meta_path: Existing metadata pickle file path.
+            append_folder: Directory containing PDFs to append.
+            graphrag_dir: GraphRAG workspace directory path.
+            callbacks: Optional callback container for progress updates.
+
+        Returns:
+            ``None`` after append, persistence, and registration complete.
+
+        Raises:
+            KnowledgeBaseAppendError: If validation or append steps fail.
+        """
         index_path = Path(index_path)
         meta_path = Path(meta_path)
         append_folder = Path(append_folder)
@@ -320,6 +353,7 @@ class KnowledgeBaseBuilder:
                 )
 
     def _process_pdf(self, path):
+        """Extract, clean, and chunk a single PDF document."""
         text = extract_text_from_pdf(path)
         text = remove_junk_lines(remove_junk_sections(text))
         chunks = chunk_text2(
@@ -331,6 +365,7 @@ class KnowledgeBaseBuilder:
         return text, chunks
 
     def _run_graphrag(self, texts, root):
+        """Run GraphRAG indexing for a set of extracted documents."""
         root = Path(root)
         (root / "input").mkdir(parents=True, exist_ok=True)
         (root / "output").mkdir(parents=True, exist_ok=True)
@@ -343,7 +378,7 @@ class KnowledgeBaseBuilder:
         )
 
     def _append_graphrag(self, texts, root):
-        """Append new docs to an existing GraphRAG workspace."""
+        """Append text documents to an existing GraphRAG workspace."""
         root = Path(root)
         input_dir = root / "input"
         output_dir = root / "output"
@@ -360,6 +395,7 @@ class KnowledgeBaseBuilder:
         )
 
     def _register(self, index, metadata, db, docs, graphrag_dir):
+        """Register loaded KB artifacts into Streamlit session state."""
         self._st.session_state.update(
             index=index,
             metadata=metadata,

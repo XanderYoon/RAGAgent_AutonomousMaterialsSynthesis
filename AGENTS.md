@@ -46,6 +46,7 @@ Design intent: keep UI thin, keep business logic in services, keep data/ML opera
 ## Docstring standard (concise and explicit)
 Use short docstrings with clear inputs, output, and behavior.
 
+For complex functions or a public interface:
 ```python
 def function_name(arg_one: str, arg_two: int) -> dict:
     """Do one specific task.
@@ -60,6 +61,12 @@ def function_name(arg_one: str, arg_two: int) -> dict:
     Raises:
         DomainError: When validation or downstream execution fails.
     """
+```
+
+For simpler functions, one line descriptors are sufficient
+```python
+def function_name(arg_one: str, arg_two: int) -> dict:
+    """Validate and inspect an existing knowledge base on disk."""
 ```
 
 Rules:

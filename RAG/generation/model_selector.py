@@ -12,13 +12,13 @@ DEFAULT_MODEL_OPTIONS = [
 
 
 def _is_allowed_model(model_id: str) -> bool:
-    """Allow o* and non-codex GPT models."""
+    """Check whether a model ID is allowed in the selector."""
     mid = (model_id or "").lower()
     return mid.startswith("o") or (mid.startswith("gpt-") and "codex" not in mid)
 
 
 def load_model_options(client):
-    """Fetch and cache available model IDs."""
+    """Load and cache selectable model IDs."""
     cached = st.session_state.get("available_models")
     if cached:
         return cached

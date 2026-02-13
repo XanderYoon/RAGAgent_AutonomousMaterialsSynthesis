@@ -8,6 +8,7 @@ _IMAGE_MODELS = {"gpt-4o-2024-08-06", "gpt-4.1-2025-04-14"}
 
 
 def _build_prompt(query: str, context: str) -> str:
+    """Create the final user prompt from query and retrieved context."""
     return f"""
 User query: {query}
 
@@ -20,7 +21,7 @@ Answer:
 
 
 def stream_answer(client, query: str, context: str, images=None) -> str:
-    """Stream an answer to the UI and return it."""
+    """Stream an answer to Streamlit and return the final text."""
     system = (
         "You are an expert scientific research assistant. Use the context provided from research papers to answer "
         "the user query as accurately as possible. Provide detailed responses using as much of the provided context "
@@ -38,6 +39,7 @@ def stream_answer(client, query: str, context: str, images=None) -> str:
     answer = ""
 
     def _stream_responses(kwargs) -> str:
+        """Stream output from the Responses API with UI updates."""
         nonlocal answer
         answer = ""
         with client.responses.stream(**kwargs) as stream:

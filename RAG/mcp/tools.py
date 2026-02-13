@@ -24,10 +24,12 @@ from RAG.services.generation_service import generate_answer
 
 
 def _resolve_api_key(api_key: str | None) -> str | None:
+    """Resolve API key from argument or environment."""
     return api_key or os.environ.get("OPENAI_API_KEY")
 
 
 def _require_api_key(api_key: str | None) -> str:
+    """Validate and persist API key for downstream SDK calls."""
     key = _resolve_api_key(api_key)
     if not key:
         raise ValueError("OpenAI API key is required.")
@@ -36,16 +38,26 @@ def _require_api_key(api_key: str | None) -> str:
 
 
 def _make_client(api_key: str) -> OpenAI:
+    """Create an OpenAI client with a fixed API key."""
     return OpenAI(api_key=api_key)
 
 
 def _make_embeddings(embedding_model: str, api_key: str) -> OpenAIEmbeddings:
+    """Create an embeddings wrapper for the requested model."""
     return OpenAIEmbeddings(model=embedding_model, api_key=api_key)
 
 
 def register_tools(mcp):
+    """Register MCP tool handlers for KB and QA workflows. """
     def kb_build(params: KBBuildInput) -> KBBuildResult:
-        """Build a FAISS knowledge base from PDFs and optionally run GraphRAG."""
+        """Build a FAISS knowledge base from PDFs and optionally run GraphRAG.
+
+        Args:
+            params: Validated KB build input payload.
+
+        Returns:
+            Structured build result with counts, cost, and warnings.
+        """
         key = _require_api_key(params.api_key)
         client = _make_client(key)
         embeddings = _make_embeddings(params.embedding_model, key)
@@ -64,7 +76,14 @@ def register_tools(mcp):
         return KBBuildResult(**result)
 
     def kb_load(params: KBLoadInput) -> KBLoadResult:
-        """Validate and inspect an existing knowledge base on disk."""
+        """Validate and inspect an existing knowledge base on disk.
+
+        Args:
+            params: Validated KB load input payload.
+
+        Returns:
+            Structured load result with model and dimension details.
+        """
         _require_api_key(params.api_key)
         result = load_kb(
             index_path=params.index_path,
@@ -74,7 +93,14 @@ def register_tools(mcp):
         return KBLoadResult(**result)
 
     def kb_append(params: KBAppendInput) -> KBAppendResult:
-        """Append new PDFs to an existing knowledge base on disk."""
+        """Append new PDFs to an existing knowledge base on disk.
+
+        Args:
+            params: Validated KB append input payload.
+
+        Returns:
+            Structured append result with counts, cost, and warnings.
+        """
         key = _require_api_key(params.api_key)
         client = _make_client(key)
         result = append_kb(
@@ -90,7 +116,14 @@ def register_tools(mcp):
         return KBAppendResult(**result)
 
     def retrieve_context_tool(params: RetrieveContextInput) -> RetrieveContextResult:
-        """Retrieve context and source references from a knowledge base."""
+        """Retrieve context and source references from a knowledge base.
+
+        Args:
+            params: Validated retrieval input payload.
+
+        Returns:
+            Retrieved context text, source references, and embedding model name.
+        """
         key = _require_api_key(params.api_key)
         result = retrieve_context(
             query=params.query,
@@ -107,7 +140,14 @@ def register_tools(mcp):
         return RetrieveContextResult(**result)
 
     def generate_answer_tool(params: GenerateAnswerInput) -> GenerateAnswerResult:
-        """Generate an answer given a query and context text."""
+        """Generate an answer from query and context text.
+
+        Args:
+            params: Validated generation input payload.
+
+        Returns:
+            Structured generation result containing answer text.
+        """
         key = _require_api_key(params.api_key)
         answer = generate_answer(
             query=params.query,
@@ -122,7 +162,14 @@ def register_tools(mcp):
     def retrieve_and_answer_tool(
         params: RetrieveAndAnswerInput,
     ) -> RetrieveAndAnswerResult:
-        """Retrieve context and generate an answer in one call."""
+        """Retrieve context and generate an answer in one call.
+
+        Args:
+            params: Validated retrieve-and-answer input payload.
+
+        Returns:
+            Combined response containing answer, context text, and sources.
+        """
         key = _require_api_key(params.api_key)
         context = retrieve_context(
             query=params.query,

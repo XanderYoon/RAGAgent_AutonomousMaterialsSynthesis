@@ -12,12 +12,14 @@ from RAG.retrieval.graphrag_query import query_graphrag, GraphRAGQueryError
 
 
 def _get_cb(callbacks, name):
+    """Get a named callback attribute from an optional callback container."""
     if callbacks is None:
         return None
     return getattr(callbacks, name, None)
 
 
 def _call(cb, *args, **kwargs):
+    """Invoke callback when provided."""
     if cb:
         cb(*args, **kwargs)
 
@@ -32,6 +34,17 @@ class QAContextRetriever:
         use_graphrag: bool = False,
         callbacks=None,
     ) -> str:
+        """Retrieve merged context text from vector, BM25, and optional graph sources.
+
+        Args:
+            query: User query text.
+            use_uploads: Whether to include uploaded-file retrieval results.
+            use_graphrag: Whether to append GraphRAG query output.
+            callbacks: Optional callback container for info and warning updates.
+
+        Returns:
+            Combined context string with source-prefixed chunks.
+        """
         req = RetrievalRequest(
             query=query,
             use_uploads=use_uploads,

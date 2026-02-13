@@ -15,10 +15,12 @@ from RAG.retrieval.graphrag_query import query_graphrag, GraphRAGQueryError
 
 
 def _resolve_api_key(api_key: str | None) -> str | None:
+    """Resolve API key from explicit argument or environment."""
     return api_key or os.environ.get("OPENAI_API_KEY")
 
 
 def _load_index_and_metadata(index_path: str, meta_path: str):
+    """Load FAISS index and metadata from disk."""
     index = faiss.read_index(index_path)
     with open(meta_path, "rb") as f:
         metadata = pickle.load(f)
@@ -28,6 +30,7 @@ def _load_index_and_metadata(index_path: str, meta_path: str):
 
 
 def _build_docs(metadata):
+    """Convert metadata entries into LangChain Document objects."""
     from langchain_core.documents import Document
 
     docs = []
@@ -53,6 +56,19 @@ def _build_faiss_retriever(
     diversity: float,
     docs,
 ):
+    """Build an MMR FAISS retriever from preloaded index artifacts.
+
+    Args:
+        index: Loaded FAISS index instance.
+        metadata: Metadata list aligned with index vector order.
+        embeddings: Embedding function used by LangChain FAISS wrapper.
+        top_k_faiss: Number of items requested from FAISS retriever.
+        diversity: MMR diversity factor in ``[0, 1]``.
+        docs: Document list aligned with metadata entries.
+
+    Returns:
+        Configured retriever object for similarity/MMR search.
+    """
     from langchain_community.vectorstores import FAISS
     from langchain_community.docstore.in_memory import InMemoryDocstore
 
@@ -90,6 +106,26 @@ def retrieve_context(
     retriever_model: str = "gpt-4o-mini",
     compressor_model: str = "gpt-4o-mini",
 ):
+    """Retrieve contextual passages and source references for a query.
+
+    Args:
+        query: User query text.
+        index_path: Path to serialized FAISS index file.
+        meta_path: Path to serialized metadata pickle file.
+        graphrag_dir: Optional GraphRAG workspace directory.
+        api_key: Optional API key override.
+        diversity: MMR diversity factor in ``[0, 1]``.
+        top_k_faiss: Optional FAISS top-k override.
+        use_graphrag: Whether to append GraphRAG query output.
+        retriever_model: Model used for multi-query expansion.
+        compressor_model: Model used for contextual compression.
+
+    Returns:
+        Dictionary with stable keys: ``context_text``, ``sources``, and ``embedding_model``.
+
+    Raises:
+        ValueError: If no API key is available for retrieval calls.
+    """
     key = _resolve_api_key(api_key)
     if not key:
         raise ValueError("OpenAI API key is required for retrieval.")

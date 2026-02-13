@@ -17,6 +17,7 @@ from ingestion.faiss_store import build_faiss_from_embeddings
 # PDF
 # ------------------------------
 def extract_text_from_pdf(path):
+    """Extract concatenated text from all pages in a PDF file."""
     doc = fitz.open(path)
     return "\n".join(page.get_text() for page in doc)
 
@@ -24,6 +25,7 @@ def extract_text_from_pdf(path):
 # Tables (CSV / XLSX)
 # ------------------------------
 def _parse_table_file(file_bytes, filename, max_rows=50, max_chars=20000):
+    """Parse CSV/XLSX bytes into a compact text snapshot."""
     try:
         if filename.lower().endswith(".csv"):
             df = pd.read_csv(io.BytesIO(file_bytes))
@@ -49,32 +51,38 @@ def _parse_table_file(file_bytes, filename, max_rows=50, max_chars=20000):
 # Images
 # ------------------------------
 def _to_data_url(file_bytes, mime_type="image/png"):
+    """Convert binary file content into a base64 data URL."""
     b64 = base64.b64encode(file_bytes).decode("utf-8")
     return f"data:{mime_type};base64,{b64}"
 
 def _get_cb(callbacks, name):
+    """Fetch a named callback attribute when callbacks are provided."""
     if callbacks is None:
         return None
     return getattr(callbacks, name, None)
 
 
 def _call(cb, *args, **kwargs):
+    """Invoke a callback only when it is not ``None``."""
     if cb:
         cb(*args, **kwargs)
 
 
 def _is_image(filename):
+    """Check whether a filename extension maps to a supported image type."""
     return filename.lower().endswith(
         (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff")
     )
 
 
 def _is_text_like(filename):
+    """Check whether a filename extension maps to a supported text-like type."""
     name = filename.lower()
     return name.endswith((".pdf", ".txt", ".csv", ".xlsx"))
 
 
 def _extract_text_from_upload(name, data):
+    """Extract text payload from supported uploaded file bytes."""
     if name.lower().endswith(".pdf"):
         with fitz.open(stream=data, filetype="pdf") as doc:
             return "\n".join(page.get_text() for page in doc)
@@ -89,12 +97,21 @@ def _extract_text_from_upload(name, data):
 # Uploaded files
 # ------------------------------
 def build_upload_bundle(uploaded_files, client, embedding_model, dimension, callbacks=None, api_key=None):
-    """
-    Build in-memory FAISS for uploaded *text-like* files and collect images.
-    Returns: (upload_db, text_meta, images)
-      - upload_db: FAISS store for uploaded text chunks (or None if none)
-      - text_meta: list of dicts for chunks
-      - images: list of {"name": str, "data_url": str}
+    """Build upload artifacts: chunk metadata, image previews, and optional FAISS.
+
+    Args:
+        uploaded_files: Streamlit uploaded file objects to process.
+        client: OpenAI-compatible client used for embedding generation.
+        embedding_model: Embedding model name used for chunk embeddings.
+        dimension: Expected vector dimension for the FAISS index.
+        callbacks: Optional callback container for warnings and status hooks.
+        api_key: Optional API key override for the embedding wrapper.
+
+    Returns:
+        Tuple of ``(upload_db, text_meta, images)`` with validated metadata and image URLs.
+
+    Raises:
+        ValueError: If bundle schema validation fails for metadata or images.
     """
     text_chunks = []
     text_meta = []
@@ -193,10 +210,7 @@ def process_uploads_for_session(
     callbacks=None,
     api_key=None,
 ):
-    """Build uploads and store results in Streamlit session_state.
-
-    Returns: (num_text_chunks, num_images)
-    """
+    """Process uploads and persist bundle artifacts in Streamlit session state."""
     if not uploaded_files:
         st.session_state.upload_db = None
         st.session_state.upload_meta = []

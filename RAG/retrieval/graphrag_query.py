@@ -9,6 +9,19 @@ class GraphRAGQueryError(RuntimeError):
 
 
 def query_graphrag(root_dir, query, max_chars=6000):
+    """Execute GraphRAG CLI query and return a shortened answer.
+
+    Args:
+        root_dir: GraphRAG workspace root path.
+        query: User query string sent to GraphRAG.
+        max_chars: Maximum length of returned text after shortening.
+
+    Returns:
+        Shortened GraphRAG answer text, or ``None`` when output is empty.
+
+    Raises:
+        GraphRAGQueryError: If the GraphRAG CLI command exits with a non-zero code.
+    """
     root = Path(root_dir)
     result = subprocess.run(
         [
