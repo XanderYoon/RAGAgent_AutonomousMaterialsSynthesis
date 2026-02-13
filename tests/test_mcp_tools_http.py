@@ -26,7 +26,8 @@ def test_mcp_kb_load_http(dummy_kb, mcp_server):
                     "params": {
                         "index_path": str(index_path),
                         "meta_path": str(meta_path),
-                        "graphrag_dir": None,
+                        "graphrag_dir": "",
+                        "api_key": "dummy-api-key",
                     }
                 },
             )
@@ -51,6 +52,7 @@ def test_mcp_generate_answer_tool(openai_key, mcp_server):
             "api_key": openai_key,
             "system": "You are a helpful scientific assistant.",
             "model": "gpt-4o-mini",
+            "enable_web_search": False,
         }
     }
 
@@ -76,6 +78,11 @@ def test_mcp_retrieve_context_tool(openai_key, openai_kb, mcp_server):
             "meta_path": str(meta_path),
             "graphrag_dir": str(graphrag_dir),
             "api_key": openai_key,
+            "diversity": 0.3,
+            "top_k_faiss": 8,
+            "use_graphrag": False,
+            "retriever_model": "gpt-4o-mini",
+            "compressor_model": "gpt-4o-mini",
         }
     }
 
@@ -101,11 +108,17 @@ def test_mcp_retrieve_and_answer_tool(openai_key, openai_kb, mcp_server):
             "meta_path": str(meta_path),
             "graphrag_dir": str(graphrag_dir),
             "api_key": openai_key,
+            "diversity": 0.3,
+            "top_k_faiss": 8,
+            "use_graphrag": False,
+            "retriever_model": "gpt-4o-mini",
+            "compressor_model": "gpt-4o-mini",
             "system": (
                 "You are a helpful scientific assistant. Use the provided "
                 "context and cite sources inline with [source | chunk id]."
             ),
             "model": "gpt-4o-mini",
+            "enable_web_search": False,
         }
     }
 

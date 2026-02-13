@@ -31,6 +31,7 @@ def _require_api_key(api_key: str | None) -> str:
     key = _resolve_api_key(api_key)
     if not key:
         raise ValueError("OpenAI API key is required.")
+    os.environ["OPENAI_API_KEY"] = key
     return key
 
 
@@ -64,6 +65,7 @@ def register_tools(mcp):
 
     def kb_load(params: KBLoadInput) -> KBLoadResult:
         """Validate and inspect an existing knowledge base on disk."""
+        _require_api_key(params.api_key)
         result = load_kb(
             index_path=params.index_path,
             meta_path=params.meta_path,
@@ -89,12 +91,13 @@ def register_tools(mcp):
 
     def retrieve_context_tool(params: RetrieveContextInput) -> RetrieveContextResult:
         """Retrieve context and source references from a knowledge base."""
+        key = _require_api_key(params.api_key)
         result = retrieve_context(
             query=params.query,
             index_path=params.index_path,
             meta_path=params.meta_path,
             graphrag_dir=params.graphrag_dir,
-            api_key=params.api_key,
+            api_key=key,
             diversity=params.diversity,
             top_k_faiss=params.top_k_faiss,
             use_graphrag=params.use_graphrag,
@@ -105,12 +108,13 @@ def register_tools(mcp):
 
     def generate_answer_tool(params: GenerateAnswerInput) -> GenerateAnswerResult:
         """Generate an answer given a query and context text."""
+        key = _require_api_key(params.api_key)
         answer = generate_answer(
             query=params.query,
             context_text=params.context_text,
             model=params.model,
             system=params.system,
-            api_key=params.api_key,
+            api_key=key,
             enable_web_search=params.enable_web_search,
         )
         return GenerateAnswerResult(answer=answer)
@@ -119,12 +123,13 @@ def register_tools(mcp):
         params: RetrieveAndAnswerInput,
     ) -> RetrieveAndAnswerResult:
         """Retrieve context and generate an answer in one call."""
+        key = _require_api_key(params.api_key)
         context = retrieve_context(
             query=params.query,
             index_path=params.index_path,
             meta_path=params.meta_path,
             graphrag_dir=params.graphrag_dir,
-            api_key=params.api_key,
+            api_key=key,
             diversity=params.diversity,
             top_k_faiss=params.top_k_faiss,
             use_graphrag=params.use_graphrag,
@@ -134,9 +139,9 @@ def register_tools(mcp):
         answer = generate_answer(
             query=params.query,
             context_text=context["context_text"],
-            model=params.model,
+            model=params.response_model,
             system=params.system,
-            api_key=params.api_key,
+            api_key=key,
             enable_web_search=params.enable_web_search,
         )
         return RetrieveAndAnswerResult(

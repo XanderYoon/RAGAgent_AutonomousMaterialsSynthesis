@@ -203,19 +203,50 @@ def build_kb(
 
 
 def load_kb(*, index_path: str, meta_path: str, graphrag_dir: str | None):
+    index_file = Path(index_path)
+    meta_file = Path(meta_path)
+
+    if not index_file.is_file():
+        raise KnowledgeBaseLoadError(
+            f"FAISS index file not found at {index_path}."
+        )
+    if not meta_file.is_file():
+        raise KnowledgeBaseLoadError(
+            f"Metadata file not found at {meta_path}."
+        )
+
     try:
-        index = faiss.read_index(index_path)
+        index = faiss.read_index(str(index_file))
         _ = index  # keep the local name used for basic validation
-        with open(meta_path, "rb") as f:
-            metadata = pickle.load(f)
-        if not metadata:
-            raise KnowledgeBaseLoadError("Metadata file is empty.")
-        model = metadata[0]["embedding_model"]
-        dim = EMBEDDING_DIMENSIONS[model]
-    except KnowledgeBaseLoadError:
-        raise
     except Exception as exc:
-        raise KnowledgeBaseLoadError("Failed to load knowledge base.") from exc
+        raise KnowledgeBaseLoadError(
+            f"Failed to read FAISS index at {index_path}."
+        ) from exc
+
+    try:
+        with open(meta_file, "rb") as f:
+            metadata = pickle.load(f)
+    except Exception as exc:
+        raise KnowledgeBaseLoadError(
+            f"Failed to load metadata file at {meta_path}."
+        ) from exc
+
+    if not metadata:
+        raise KnowledgeBaseLoadError(f"Metadata file is empty at {meta_path}.")
+
+    model = metadata[0].get("embedding_model")
+    if not model:
+        raise KnowledgeBaseLoadError(
+            f"Missing 'embedding_model' in metadata at {meta_path}."
+        )
+    if model not in EMBEDDING_DIMENSIONS:
+        raise KnowledgeBaseLoadError(
+            "Unsupported embedding model "
+            f"'{model}' in metadata at {meta_path}. "
+            f"Supported: {sorted(EMBEDDING_DIMENSIONS)}."
+        )
+
+    dim = EMBEDDING_DIMENSIONS[model]
 
     return {
         "status": "ok",
