@@ -43,7 +43,6 @@ def _make_embeddings(embedding_model: str, api_key: str) -> OpenAIEmbeddings:
 
 
 def register_tools(mcp):
-    @mcp.tool()
     def kb_build(params: KBBuildInput) -> KBBuildResult:
         """Build a FAISS knowledge base from PDFs and optionally run GraphRAG."""
         key = _require_api_key(params.api_key)
@@ -63,7 +62,6 @@ def register_tools(mcp):
         )
         return KBBuildResult(**result)
 
-    @mcp.tool()
     def kb_load(params: KBLoadInput) -> KBLoadResult:
         """Validate and inspect an existing knowledge base on disk."""
         result = load_kb(
@@ -73,7 +71,6 @@ def register_tools(mcp):
         )
         return KBLoadResult(**result)
 
-    @mcp.tool()
     def kb_append(params: KBAppendInput) -> KBAppendResult:
         """Append new PDFs to an existing knowledge base on disk."""
         key = _require_api_key(params.api_key)
@@ -90,7 +87,6 @@ def register_tools(mcp):
         )
         return KBAppendResult(**result)
 
-    @mcp.tool()
     def retrieve_context_tool(params: RetrieveContextInput) -> RetrieveContextResult:
         """Retrieve context and source references from a knowledge base."""
         result = retrieve_context(
@@ -107,7 +103,6 @@ def register_tools(mcp):
         )
         return RetrieveContextResult(**result)
 
-    @mcp.tool()
     def generate_answer_tool(params: GenerateAnswerInput) -> GenerateAnswerResult:
         """Generate an answer given a query and context text."""
         answer = generate_answer(
@@ -120,7 +115,6 @@ def register_tools(mcp):
         )
         return GenerateAnswerResult(answer=answer)
 
-    @mcp.tool()
     def retrieve_and_answer_tool(
         params: RetrieveAndAnswerInput,
     ) -> RetrieveAndAnswerResult:
@@ -150,3 +144,10 @@ def register_tools(mcp):
             context_text=context["context_text"],
             sources=context["sources"],
         )
+
+    mcp.tool()(kb_build)
+    mcp.tool()(kb_load)
+    mcp.tool()(kb_append)
+    mcp.tool()(retrieve_context_tool)
+    mcp.tool()(generate_answer_tool)
+    mcp.tool()(retrieve_and_answer_tool)

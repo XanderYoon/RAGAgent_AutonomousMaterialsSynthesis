@@ -29,7 +29,7 @@ class QAContextRetriever:
         self,
         query: str,
         use_uploads: bool = True,
-        use_graphrag: bool = True,
+        use_graphrag: bool = False,
         callbacks=None,
     ) -> str:
         req = RetrievalRequest(

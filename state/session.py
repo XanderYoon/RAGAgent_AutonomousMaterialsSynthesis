@@ -41,6 +41,7 @@ def init_session():
         "last_query": "",
         "last_answer": "",
         "context_meta": "",
+        "use_graphrag": False,
     }
 
     for key, value in defaults.items():

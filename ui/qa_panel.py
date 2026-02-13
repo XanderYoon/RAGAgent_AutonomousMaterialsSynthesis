@@ -26,18 +26,24 @@ def model_selector(options):
 
 
 def advanced_controls():
-    """Diversity + creativity controls."""
+    """Diversity, GraphRAG, and creativity controls."""
     with st.expander("🎛️ Advanced Controls"):
-        st.session_state.diversity = st.slider(
-            "Diversity", 0.0, 1.0, 0.7, 0.01
+        st.toggle(
+            "Use GraphRAG retrieval",
+            key="use_graphrag",
+            help="Include knowledge-graph context in retrieval when a GraphRAG index is loaded.",
+        )
+        
+        st.slider(
+            "Diversity", 0.0, 1.0, 0.7, 0.01, key="diversity"
         )
 
         if st.session_state.gpt_model in {
             "gpt-4o-2024-08-06",
             "gpt-4.1-2025-04-14",
         }:
-            st.session_state.temperature = st.slider(
-                "Creativity", 0.0, 1.0, 0.3, 0.01
+            st.slider(
+                "Creativity", 0.0, 1.0, 0.3, 0.01, key="temperature"
             )
         else:
             st.session_state.temperature = 0.3
@@ -63,6 +69,7 @@ def qa_panel(client):
     st.session_state.setdefault("last_query", "")
     st.session_state.setdefault("last_answer", "")
     st.session_state.setdefault("context_meta", "")
+    st.session_state.setdefault("use_graphrag", False)
 
     model_selector(load_model_options(client))
     advanced_controls()
@@ -129,7 +136,7 @@ def qa_panel(client):
             context = retriever.retrieve(
                 query,
                 use_uploads=True,
-                use_graphrag=True,
+                use_graphrag=st.session_state.use_graphrag,
                 callbacks=_GraphCallbacks(),
             )
         st.markdown("### 💡 Answer")

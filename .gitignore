@@ -17,4 +17,5 @@ temp*
 .streamlit/
 .DS_Store
 .log
+.agent_instructions
 mcp_demo.sh
