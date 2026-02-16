@@ -10,8 +10,12 @@ from langchain_community.document_transformers import LongContextReorder
 from langchain_community.retrievers import BM25Retriever
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
+from RAG.graphrag_query import GraphRAGQueryError, query_graphrag
 from state.config import TOP_K_TEXT_BM25, TOP_K_TEXT_FAISS
-from RAG.retrieval.graphrag_query import query_graphrag, GraphRAGQueryError
+
+
+class RetrievalError(Exception):
+    """Raised when retrieval pipeline execution fails."""
 
 
 def _resolve_api_key(api_key: str | None) -> str | None:
@@ -21,11 +25,19 @@ def _resolve_api_key(api_key: str | None) -> str | None:
 
 def _load_index_and_metadata(index_path: str, meta_path: str):
     """Load FAISS index and metadata from disk."""
-    index = faiss.read_index(index_path)
-    with open(meta_path, "rb") as f:
-        metadata = pickle.load(f)
+    try:
+        index = faiss.read_index(index_path)
+    except Exception as exc:
+        raise RetrievalError(f"Failed to read FAISS index at {index_path}.") from exc
+
+    try:
+        with open(meta_path, "rb") as f:
+            metadata = pickle.load(f)
+    except Exception as exc:
+        raise RetrievalError(f"Failed to load metadata file at {meta_path}.") from exc
+
     if not metadata:
-        raise ValueError("Metadata file is empty.")
+        raise RetrievalError(f"Metadata file is empty at {meta_path}.")
     return index, metadata
 
 
@@ -48,29 +60,10 @@ def _build_docs(metadata):
     return docs
 
 
-def _build_faiss_retriever(
-    index,
-    metadata,
-    embeddings,
-    top_k_faiss: int,
-    diversity: float,
-    docs,
-):
-    """Build an MMR FAISS retriever from preloaded index artifacts.
-
-    Args:
-        index: Loaded FAISS index instance.
-        metadata: Metadata list aligned with index vector order.
-        embeddings: Embedding function used by LangChain FAISS wrapper.
-        top_k_faiss: Number of items requested from FAISS retriever.
-        diversity: MMR diversity factor in ``[0, 1]``.
-        docs: Document list aligned with metadata entries.
-
-    Returns:
-        Configured retriever object for similarity/MMR search.
-    """
-    from langchain_community.vectorstores import FAISS
+def _build_faiss_retriever(index, metadata, embeddings, top_k_faiss: int, diversity: float, docs):
+    """Build an MMR FAISS retriever from preloaded index artifacts."""
     from langchain_community.docstore.in_memory import InMemoryDocstore
+    from langchain_community.vectorstores import FAISS
 
     ids = [str(i) for i in range(len(metadata))]
     docs_dict = {ids[i]: docs[i] for i in range(len(metadata))}
@@ -106,29 +99,10 @@ def retrieve_context(
     retriever_model: str = "gpt-4o-mini",
     compressor_model: str = "gpt-4o-mini",
 ):
-    """Retrieve contextual passages and source references for a query.
-
-    Args:
-        query: User query text.
-        index_path: Path to serialized FAISS index file.
-        meta_path: Path to serialized metadata pickle file.
-        graphrag_dir: Optional GraphRAG workspace directory.
-        api_key: Optional API key override.
-        diversity: MMR diversity factor in ``[0, 1]``.
-        top_k_faiss: Optional FAISS top-k override.
-        use_graphrag: Whether to append GraphRAG query output.
-        retriever_model: Model used for multi-query expansion.
-        compressor_model: Model used for contextual compression.
-
-    Returns:
-        Dictionary with stable keys: ``context_text``, ``sources``, and ``embedding_model``.
-
-    Raises:
-        ValueError: If no API key is available for retrieval calls.
-    """
+    """Retrieve contextual passages and source references for a query."""
     key = _resolve_api_key(api_key)
     if not key:
-        raise ValueError("OpenAI API key is required for retrieval.")
+        raise RetrievalError("OpenAI API key is required for retrieval.")
 
     index, metadata = _load_index_and_metadata(index_path, meta_path)
     embedding_model = metadata[0]["embedding_model"]
@@ -136,9 +110,7 @@ def retrieve_context(
 
     top_k = top_k_faiss or TOP_K_TEXT_FAISS
     docs = _build_docs(metadata)
-    vs = _build_faiss_retriever(
-        index, metadata, embeddings, top_k, diversity, docs
-    )
+    vs = _build_faiss_retriever(index, metadata, embeddings, top_k, diversity, docs)
 
     bm25 = BM25Retriever.from_documents(docs, k=TOP_K_TEXT_BM25)
 
@@ -162,7 +134,11 @@ def retrieve_context(
         base_compressor=compressor,
     )
 
-    docs = retriever.invoke(query)
+    try:
+        docs = retriever.invoke(query)
+    except Exception as exc:
+        raise RetrievalError("Failed to retrieve context documents.") from exc
+
     docs = LongContextReorder().transform_documents(docs)
 
     context_lines = [

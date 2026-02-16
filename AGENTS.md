@@ -4,16 +4,15 @@
 - `app.py` is the Streamlit composition root.
 - `ui/` contains presentation and user interaction only (`API_setup.py`, `kb_setup.py`, `qa_panel.py`).
 - `state/` centralizes config constants, session bootstrap, and shared schemas.
-- `RAG/services/` orchestrates end-to-end use cases:
-  - `kb_service.py`: build/load/append knowledge base and optional GraphRAG indexing.
-  - `retrieval_service.py`: hybrid retrieval pipeline (FAISS + BM25 + multi-query + compression + optional GraphRAG query).
-  - `generation_service.py`: final LLM answer generation.
-- `ingestion/` provides data-processing primitives (load, clean, chunk, embed, vector store utilities).
-- `RAG/retrieval/` and `RAG/generation/` contain lower-level retrieval/generation helpers used by services.
-- `RAG/mcp/` exposes MCP-compatible tools and schemas.
-- `tests/` validates behavior at service and MCP-tool boundaries.
+- `RAG/` contains core reusable pipeline logic:
+  - `kb_builder.py`: build/load/append knowledge base and optional GraphRAG indexing.
+  - `retrieval.py`: hybrid retrieval pipeline (FAISS + BM25 + multi-query + compression + optional GraphRAG query).
+  - `generation.py`: final LLM answer generation.
+  - `ingestion/`: data-processing primitives (load, clean, chunk, embed, vector store utilities).
+- `MCP/` exposes MCP-compatible tools and schemas as a transport adapter over `RAG/`.
+- `tests/` validates behavior at core and MCP-tool boundaries.
 
-Design intent: keep UI thin, keep business logic in services, keep data/ML operations in ingestion/retrieval modules, and keep shared contracts in `state/`.
+Design intent: keep UI/MCP thin, keep business logic centralized in `RAG/`, keep data/ML operations in ingestion/retrieval modules, and keep shared contracts in `state/`.
 
 ## Function style guide (SOLID)
 

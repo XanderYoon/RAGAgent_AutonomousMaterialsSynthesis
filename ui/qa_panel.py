@@ -3,16 +3,53 @@ from pathlib import Path
 import streamlit as st
 from docx import Document as DocxDocument
 
-from RAG.generation.model_selector import load_model_options
-from RAG.generation.streaming import stream_answer
-from RAG.retrieval.retriever import QAContextRetriever
-from ingestion.loaders import process_uploads_for_session
+from RAG.generation import GenerationError, generate_answer
+from RAG.ingestion.loaders import process_uploads_for_session
+from RAG.retrieval import RetrievalError, retrieve_context
 from state.config import EMBEDDING_DIMENSIONS
 
 
 # -------------------------
 # Controls
 # -------------------------
+
+DEFAULT_MODEL_OPTIONS = [
+    "gpt-4.1-2025-04-14",
+    "gpt-4o-2024-08-06",
+    "gpt-5",
+    "gpt-5-thinking",
+    "gpt-5-pro",
+    "o4-mini-2025-04-16",
+    "o4-mini-deep-research-2025-06-26",
+]
+
+
+def _is_allowed_model(model_id: str) -> bool:
+    """Check whether a model ID is allowed in the selector."""
+    mid = (model_id or "").lower()
+    return mid.startswith("o") or (mid.startswith("gpt-") and "codex" not in mid)
+
+
+def load_model_options(client):
+    """Load and cache selectable model IDs."""
+    cached = st.session_state.get("available_models")
+    if cached:
+        return cached
+
+    if client is None:
+        return DEFAULT_MODEL_OPTIONS
+
+    try:
+        data = client.models.list()
+        models = [m.id for m in getattr(data, "data", [])]
+        options = sorted({m for m in models if _is_allowed_model(m)})
+        if options:
+            st.session_state.available_models = options
+            return options
+    except Exception:
+        pass
+
+    return DEFAULT_MODEL_OPTIONS
 
 def model_selector(options):
     """Select LLM for answer generation."""
@@ -99,15 +136,13 @@ def qa_panel(client):
         "💾 Save last Q&A", use_container_width=True, disabled=disabled
     )
 
-    retriever = QAContextRetriever()
-    class _GraphCallbacks:
-        def info(self, msg):
-            st.info(msg)
-
-        def warning(self, msg):
-            st.warning(msg)
-
     if answer_clicked and query:
+        index_path = st.session_state.get("index_path")
+        meta_path = st.session_state.get("meta_path")
+        if not index_path or not meta_path:
+            st.error("Missing index/meta file paths in session. Reload or rebuild the KB.")
+            return
+
         with st.spinner("📂 Processing uploaded files..."):
             try:
                 n_text, n_imgs = process_uploads_for_session(
@@ -133,20 +168,50 @@ def qa_panel(client):
                 )
 
         with st.spinner("🔍 Retrieving context..."):
-            context = retriever.retrieve(
-                query,
-                use_uploads=True,
-                use_graphrag=st.session_state.use_graphrag,
-                callbacks=_GraphCallbacks(),
-            )
+            try:
+                retrieval_result = retrieve_context(
+                    query=query,
+                    index_path=index_path,
+                    meta_path=meta_path,
+                    graphrag_dir=st.session_state.get("graphrag"),
+                    api_key=st.session_state.get("api_key"),
+                    diversity=st.session_state.get("diversity", 0.7),
+                    use_graphrag=st.session_state.use_graphrag,
+                )
+                context = retrieval_result["context_text"]
+            except RetrievalError as exc:
+                st.error(f"❌ Retrieval failed: {exc}")
+                return
+
+            upload_meta = st.session_state.get("upload_meta") or []
+            if upload_meta:
+                upload_lines = [
+                    f"[{m['source']} | chunk {m['chunk_id']}]: {m['text']}"
+                    for m in upload_meta
+                ]
+                context = context + "\n\n" + "\n\n".join(upload_lines)
+            if st.session_state.get("upload_images"):
+                for img in st.session_state.upload_images:
+                    context += f"\n\n[uploaded/{img['name']} | image]: (image attached)"
         st.markdown("### 💡 Answer")
 
-        answer = stream_answer(
-            client,
-            query,
-            context,
-            images=st.session_state.get("upload_images"),
+        system = (
+            "You are an expert scientific research assistant. Use the context provided from research papers "
+            "to answer the user query accurately and with source-aware details. If context is insufficient, "
+            "state that clearly before providing a best-effort response."
         )
+        try:
+            answer = generate_answer(
+                query=query,
+                context_text=context,
+                model=st.session_state.gpt_model,
+                system=system,
+                api_key=st.session_state.get("api_key"),
+                enable_web_search=False,
+            )
+        except GenerationError as exc:
+            st.error(f"❌ Generation failed: {exc}")
+            return
 
         st.session_state.update(
             last_query=query,

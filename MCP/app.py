@@ -3,7 +3,7 @@ try:
 except Exception:  # pragma: no cover - fallback for older MCP SDKs
     from mcp.server.fastmcp import FastMCP
 
-from RAG.mcp.tools import register_tools
+from MCP.tools import register_tools
 
 
 def create_app():

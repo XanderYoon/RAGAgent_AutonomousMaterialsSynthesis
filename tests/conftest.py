@@ -16,8 +16,8 @@ from openai import OpenAI
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from RAG.mcp.app import create_app  # noqa: E402
-from RAG.services.kb_service import build_kb  # noqa: E402
+from MCP.app import create_app  # noqa: E402
+from RAG.kb_builder import build_kb  # noqa: E402
 from state.config import EMBEDDING_DIMENSIONS, ENC  # noqa: E402
 
 

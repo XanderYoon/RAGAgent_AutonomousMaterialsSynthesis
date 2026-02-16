@@ -59,7 +59,7 @@ trap "echo '[INFO] Shutting down...'; kill 0" SIGINT SIGTERM
 
 # === Start MCP server ===
 echo "[INFO] Starting MCP server..."
-python3 -c "from RAG.mcp.app import create_app; create_app().run(transport='http', host='127.0.0.1', port=8000)" &
+python3 -c "from MCP.app import create_app; create_app().run(transport='http', host='127.0.0.1', port=8000)" &
 
 # === Wait for MCP server ===
 echo "[INFO] Waiting for MCP server on port 8000..."

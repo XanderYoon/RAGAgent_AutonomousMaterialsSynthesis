@@ -31,6 +31,8 @@ def init_session():
         "bm25": None,
         "all_documents": None,
         "graphrag": None,
+        "index_path": None,
+        "meta_path": None,
 
         # Uploads
         "upload_db": None,

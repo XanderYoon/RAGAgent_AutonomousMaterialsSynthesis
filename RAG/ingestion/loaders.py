@@ -9,9 +9,9 @@ from langchain_openai import OpenAIEmbeddings
 
 from state.config import ENC, TOKENS_PER_CHUNK, WORDS_PER_CHUNK_OVERLAP
 from state.schemas import ChunkMetadata, UploadBundle
-from ingestion.chunkers import chunk_text2
-from ingestion.cleaners import remove_junk_sections, remove_junk_lines
-from ingestion.faiss_store import build_faiss_from_embeddings
+from RAG.ingestion.chunkers import chunk_text2
+from RAG.ingestion.cleaners import remove_junk_sections, remove_junk_lines
+from RAG.ingestion.faiss_store import build_faiss_from_embeddings
 
 # ------------------------------
 # PDF

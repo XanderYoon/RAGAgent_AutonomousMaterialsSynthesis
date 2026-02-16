@@ -1,4 +1,4 @@
-# ingestion/faiss_store.py
+# RAG/ingestion/faiss_store.py
 import faiss
 import numpy as np
 from langchain_community.vectorstores import FAISS

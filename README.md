@@ -40,8 +40,12 @@ The system enables researchers to:
 .
 ├── app.py                     # Main application (UI + RAG pipeline)
 ├── assets/                    # Images (Demo)
-├── ingestion/                 # PDF ingestion + indexing helpers
-├── RAG/                       # Core RAG services + MCP tools
+├── RAG/                       # Core RAG logic + ingestion helpers
+│   ├── kb_builder.py          # KB build/load/append core logic
+│   ├── retrieval.py           # Retrieval core logic
+│   ├── generation.py          # Generation core logic
+│   └── ingestion/             # PDF ingestion + indexing helpers
+├── MCP/                       # MCP adapters (tools/schemas/app)
 ├── state/                     # Config + schemas
 ├── tests/                     # Pytest suite
 ├── ui/                        # Streamlit UI modules

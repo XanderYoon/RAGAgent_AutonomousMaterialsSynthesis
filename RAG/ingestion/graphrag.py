@@ -1,4 +1,4 @@
-# ingestion/graphrag.py
+# RAG/ingestion/graphrag.py
 from pathlib import Path
 import subprocess
 

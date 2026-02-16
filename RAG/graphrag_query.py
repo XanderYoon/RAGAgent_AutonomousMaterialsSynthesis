@@ -1,4 +1,4 @@
-# RAG/retrieval/graphrag_query.py
+# RAG/graphrag_query.py
 import subprocess
 from pathlib import Path
 import textwrap

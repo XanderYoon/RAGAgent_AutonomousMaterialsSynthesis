@@ -4,7 +4,7 @@ import pytest
 from langchain_openai import OpenAIEmbeddings
 from openai import OpenAI
 
-from RAG.services.kb_service import append_kb, build_kb, load_kb
+from RAG.kb_builder import append_kb, build_kb, load_kb
 from state.config import ENC
 
 

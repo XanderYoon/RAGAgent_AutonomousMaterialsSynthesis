@@ -4,7 +4,7 @@ from openai import OpenAI
 from langchain_openai import OpenAIEmbeddings
 
 from state.config import ENC
-from RAG.mcp.schemas import (
+from MCP.schemas import (
     KBAppendInput,
     KBAppendResult,
     KBBuildInput,
@@ -18,9 +18,9 @@ from RAG.mcp.schemas import (
     RetrieveContextInput,
     RetrieveContextResult,
 )
-from RAG.services.kb_service import append_kb, build_kb, load_kb
-from RAG.services.retrieval_service import retrieve_context
-from RAG.services.generation_service import generate_answer
+from RAG.kb_builder import append_kb, build_kb, load_kb
+from RAG.retrieval import retrieve_context
+from RAG.generation import generate_answer
 
 
 def _resolve_api_key(api_key: str | None) -> str | None:
